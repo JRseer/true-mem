@@ -13,6 +13,35 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ---
 
+## 📁 Document Structure (Single Source of Truth)
+
+| File | Scopo | Contenuto |
+|------|-------|-----------|
+| **AGENTS.md** | Context & Status | High-level overview, stato, config critiche |
+| **PLAN.md** | Implementation | Step-by-step, architettura, codice |
+
+### Regola
+
+- **AGENTS.md** = WHAT & WHY (cosa è il progetto, perché esiste, stato attuale)
+- **PLAN.md** = HOW (come implementare, step dettagliati, codice)
+
+Quando PLAN.md è completato → rimane solo AGENTS.md come documentazione finale.
+
+### AGENTS.md contiene
+- ✅ Stato implementazione (checklist)
+- ✅ Config critiche e path
+- ✅ Bug risolti e lezioni imparate
+- ✅ High-level overview (5 miglioramenti in 1 riga cadauno)
+- ✅ Rimandi a PLAN.md per dettagli
+
+### PLAN.md contiene
+- ✅ Architettura dettagliata
+- ✅ Step-by-step implementation
+- ✅ Codice e pattern
+- ✅ Decisioni tecniche con rationale
+
+---
+
 ## ✅ CURRENT STATUS - FASE 1 COMPLETATA
 
 **Data ultimo aggiornamento**: 22/02/2026
