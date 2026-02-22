@@ -261,6 +261,25 @@ grep -i "error" ~/.true-memory/debug.log
 
 ---
 
+---
+
+## Git Workflow
+
+**REGOLA**: Commit sempre e solo in locale. Push SOLO quando il plugin è testato e funzionante.
+
+```bash
+# Durante sviluppo - SOLO commit locali
+git add .
+git commit -m "feat: descrizione"
+
+# Quando il plugin è funzionante e testato
+git push origin main
+```
+
+**Rationale**: Evitare di pushare codice rotto o half-baked sul repo remoto. Il plugin deve essere stabile prima della pubblicazione.
+
+---
+
 ## Notes
 
 - **Creato**: 22/02/2026
