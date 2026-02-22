@@ -79,6 +79,10 @@ Crea `src/memory/classifications.ts`:
 
 Crea `src/memory/store.ts`:
 - Classe `MemoryStore` con init lazy
+- Database path: `~/.true-memory/memory.db`
+- **WAL mode** (`PRAGMA journal_mode = WAL`) per concorrenza
+  - SQLite creerà automaticamente `memory.db-shm` e `memory.db-wal`
+  - Questi 3 file insieme formano UN solo database (non 3 separati)
 - Schema DB:
   ```sql
   CREATE TABLE memories (
