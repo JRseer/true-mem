@@ -149,7 +149,34 @@ Dense vector embeddings con cosine similarity.
 Embedda il prompt, cerca top-k, inietta solo quelle.
 
 ### 4. Estrazione Asincrona (non blocking)
-Background processing, risponde subito.
+
+**Problema PsychMem**: Estrazione blocca l'UI → ESC lento, progress bar continua dopo fine task.
+
+**Soluzione True-Memory**: Fire-and-forget + debounce.
+
+```typescript
+// MAI await sul lavoro di estrazione!
+event: async ({ event }) => {
+  // Skip sincrono (no await)
+  if (silentEvents.has(event.type)) return;
+  
+  // Fire-and-forget
+  lazyInit().then(hooks => {
+    if (hooks.event) {
+      hooks.event({ event }).catch(err => log(`Error: ${err}`));
+    }
+  });
+  // Ritorna IMMEDIATAMENTE - UI non bloccata
+},
+```
+
+| Evento | Strategia |
+|--------|-----------|
+| `message.updated` | Debounce 500ms + fire-and-forget |
+| `session.idle` | `queueMicrotask` + fire-and-forget |
+| `session.created` | Fire-and-forget |
+
+**Principio**: La hook function ritorna subito. Tutto il lavoro pesante parte in background, errori solo loggati.
 
 ### 5. Reconsolidation LLM (non interferenza automatica)
 LLM eval: conflitto, complemento o duplicato?
