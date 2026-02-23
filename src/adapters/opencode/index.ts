@@ -8,6 +8,10 @@ import { DEFAULT_CONFIG } from '../../config.js';
 import { MemoryDatabase, createMemoryDatabase } from '../../storage/database.js';
 import { log } from '../../logger.js';
 
+// Debounce state for message.updated events
+let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingMessageEvent: { properties: unknown } | null = null;
+
 // Message container type matching SDK response
 interface MessageContainer {
   info: Message;
@@ -22,6 +26,28 @@ function getSessionIdFromEvent(properties?: Record<string, unknown>): string | u
   if (typeof properties.sessionID === 'string') return properties.sessionID;
   if (typeof properties.id === 'string') return properties.id;
   return undefined;
+}
+
+// Debounce helper for message.updated events
+function debounceMessageUpdate(
+  state: TrueMemoryAdapterState,
+  eventProps: unknown,
+  handler: (state: TrueMemoryAdapterState, props: Record<string, unknown> | undefined) => Promise<void>
+) {
+  pendingMessageEvent = { properties: eventProps };
+
+  if (messageDebounceTimer) {
+    clearTimeout(messageDebounceTimer);
+  }
+
+  messageDebounceTimer = setTimeout(() => {
+    if (pendingMessageEvent) {
+      handler(state, pendingMessageEvent.properties as Record<string, unknown> | undefined)
+        .catch(err => log(`Message processing error: ${err}`));
+    }
+    pendingMessageEvent = null;
+    messageDebounceTimer = null;
+  }, 500); // 500ms debounce
 }
 
 // Adapter state
@@ -82,7 +108,11 @@ export async function createTrueMemoryPlugin(
           await handleSessionCreated(state, sessionId);
           break;
         case 'session.idle':
-          await handleSessionIdle(state, sessionId);
+          // Use queueMicrotask for non-blocking execution
+          queueMicrotask(() => {
+            handleSessionIdle(state, sessionId)
+              .catch(err => log(`Session idle error: ${err}`));
+          });
           break;
         case 'session.deleted':
         case 'session.error':
@@ -90,7 +120,8 @@ export async function createTrueMemoryPlugin(
           break;
         case 'message.updated':
           if (state.config.opencode.extractOnMessage) {
-            await handleMessageUpdated(state, event.properties);
+            // Debounce message updates to avoid blocking UI
+            debounceMessageUpdate(state, event.properties, handleMessageUpdated);
           }
           break;
       }

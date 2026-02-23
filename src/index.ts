@@ -1,22 +1,14 @@
 /**
  * True-Memory - Persistent memory plugin for OpenCode
- * 
+ *
  * CRITICAL:
  * - Do NOT await in default export (blocks OpenCode startup)
  * - Return hooks IMMEDIATELY, init lazily on first hook call
  */
 
-// SYNC DEBUG - runs at module load time
-console.log('[TRUE-MEMORY] Module loading...');
-
 import type { Plugin, Hooks } from '@opencode-ai/plugin';
 import type { PluginInput } from '@opencode-ai/plugin';
-
-console.log('[TRUE-MEMORY] Imports done');
-
 import { log } from './logger.js';
-
-console.log('[TRUE-MEMORY] Logger imported');
 
 // Singleton state - shared across all hook calls
 let state: {
@@ -66,30 +58,38 @@ async function lazyInit(): Promise<Hooks> {
 }
 
 const TrueMemory: Plugin = async (ctx) => {
-  console.log('[TRUE-MEMORY] Plugin entry point called');
-  log('Plugin entry point - returning hooks immediately');
-  
   // Store ctx for lazy init
   state.ctx = ctx;
-  
+
   // Return hooks IMMEDIATELY - no await!
   // Real init happens lazily on first hook call
   return {
     event: async ({ event }) => {
-      const hooks = await lazyInit();
-      if (hooks.event) {
-        await hooks.event({ event });
-      }
+      // Skip noisy events synchronously
+      const silentEvents = new Set(['message.part.delta', 'message.part.updated', 'session.diff']);
+      if (silentEvents.has(event.type)) return;
+
+      // Fire-and-forget - don't await!
+      lazyInit().then(hooks => {
+        if (hooks.event) {
+          hooks.event({ event }).catch(err => log(`Event error (${event.type}): ${err}`));
+        }
+      }).catch(err => log(`Init error: ${err}`));
+      // Returns immediately - UI not blocked
     },
-    
+
     'tool.execute.after': async (input, output) => {
-      const hooks = await lazyInit();
-      if (hooks['tool.execute.after']) {
-        await hooks['tool.execute.after'](input, output);
-      }
+      // Fire-and-forget - don't await!
+      lazyInit().then(hooks => {
+        if (hooks['tool.execute.after']) {
+          hooks['tool.execute.after'](input, output).catch(err => log(`Tool execute after error: ${err}`));
+        }
+      }).catch(err => log(`Init error: ${err}`));
+      // Returns immediately - UI not blocked
     },
-    
+
     'experimental.session.compacting': async (input, output) => {
+      // MUST await - needs to modify output before compaction
       const hooks = await lazyInit();
       if (hooks['experimental.session.compacting']) {
         await hooks['experimental.session.compacting'](input, output);
