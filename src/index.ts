@@ -50,6 +50,7 @@ async function lazyInit(): Promise<Hooks> {
       log('Lazy init completed');
     } catch (error) {
       log(`Lazy init failed: ${error}`);
+      state.initPromise = null; // Reset to allow retry on subsequent calls
     }
   })();
   

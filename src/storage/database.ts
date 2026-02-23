@@ -20,6 +20,7 @@ import type {
 import { DEFAULT_CONFIG } from '../config.js';
 import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
+import { log } from '../logger.js';
 
 /**
  * Resolve database path, expanding ~ to home directory
@@ -75,94 +76,161 @@ export class MemoryDatabase {
   }
 
   private initializeSchema(): void {
-    this.db.exec(`
-      -- Schema version table
-      CREATE TABLE IF NOT EXISTS schema_version (
-        version INTEGER NOT NULL,
-        applied_at TEXT NOT NULL
-      );
+    // Begin transaction for migration process
+    this.db.exec('BEGIN TRANSACTION');
 
-      -- Sessions table
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        project TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        metadata TEXT,
-        transcript_path TEXT,
-        transcript_watermark INTEGER DEFAULT 0,
-        message_watermark INTEGER DEFAULT 0
-      );
+    try {
+      // Create schema_version table first if it doesn't exist
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL
+        );
+      `);
 
-      -- Events table (raw hook events)
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        hook_type TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        content TEXT NOT NULL,
-        tool_name TEXT,
-        tool_input TEXT,
-        tool_output TEXT,
-        metadata TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
+      // Get current version
+      const row = this.db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number } | undefined;
+      const currentVersion = row?.version ?? 0;
 
-      -- Memory units table
-      CREATE TABLE IF NOT EXISTS memory_units (
-        id TEXT PRIMARY KEY,
-        session_id TEXT,
-        store TEXT NOT NULL,
-        classification TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        source_event_ids TEXT NOT NULL,
-        project_scope TEXT,
+      log(`Database schema version: ${currentVersion}`);
 
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_accessed_at TEXT NOT NULL,
+      // Define migrations
+      const migrations: Array<{ version: number; description: string; sql: string }> = [
+        {
+          version: 1,
+          description: 'Create initial tables (sessions, events, memory_units) without embedding column',
+          sql: `
+            -- Sessions table
+            CREATE TABLE IF NOT EXISTS sessions (
+              id TEXT PRIMARY KEY,
+              project TEXT NOT NULL,
+              started_at TEXT NOT NULL,
+              ended_at TEXT,
+              status TEXT NOT NULL DEFAULT 'active',
+              metadata TEXT,
+              transcript_path TEXT,
+              transcript_watermark INTEGER DEFAULT 0,
+              message_watermark INTEGER DEFAULT 0
+            );
 
-        recency REAL NOT NULL DEFAULT 0,
-        frequency INTEGER NOT NULL DEFAULT 1,
-        importance REAL NOT NULL DEFAULT 0.5,
-        utility REAL NOT NULL DEFAULT 0.5,
-        novelty REAL NOT NULL DEFAULT 0.5,
-        confidence REAL NOT NULL DEFAULT 0.5,
-        interference REAL NOT NULL DEFAULT 0,
+            -- Events table (raw hook events)
+            CREATE TABLE IF NOT EXISTS events (
+              id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL,
+              hook_type TEXT NOT NULL,
+              timestamp TEXT NOT NULL,
+              content TEXT NOT NULL,
+              tool_name TEXT,
+              tool_input TEXT,
+              tool_output TEXT,
+              metadata TEXT,
+              FOREIGN KEY (session_id) REFERENCES sessions(id)
+            );
 
-        strength REAL NOT NULL DEFAULT 0.5,
-        decay_rate REAL NOT NULL,
+            -- Memory units table (WITHOUT embedding column)
+            CREATE TABLE IF NOT EXISTS memory_units (
+              id TEXT PRIMARY KEY,
+              session_id TEXT,
+              store TEXT NOT NULL,
+              classification TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              source_event_ids TEXT NOT NULL,
+              project_scope TEXT,
 
-        tags TEXT,
-        associations TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              last_accessed_at TEXT NOT NULL,
 
-        status TEXT NOT NULL DEFAULT 'active',
-        version INTEGER NOT NULL DEFAULT 1,
+              recency REAL NOT NULL DEFAULT 0,
+              frequency INTEGER NOT NULL DEFAULT 1,
+              importance REAL NOT NULL DEFAULT 0.5,
+              utility REAL NOT NULL DEFAULT 0.5,
+              novelty REAL NOT NULL DEFAULT 0.5,
+              confidence REAL NOT NULL DEFAULT 0.5,
+              interference REAL NOT NULL DEFAULT 0,
 
-        embedding BLOB,
+              strength REAL NOT NULL DEFAULT 0.5,
+              decay_rate REAL NOT NULL,
 
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
+              tags TEXT,
+              associations TEXT,
 
-      -- Indexes
-      CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
-      CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_memory_store ON memory_units(store);
-      CREATE INDEX IF NOT EXISTS idx_memory_status ON memory_units(status);
-      CREATE INDEX IF NOT EXISTS idx_memory_strength ON memory_units(strength);
-      CREATE INDEX IF NOT EXISTS idx_memory_classification ON memory_units(classification);
-      CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_units(session_id);
-      CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
-      CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
-    `);
+              status TEXT NOT NULL DEFAULT 'active',
+              version INTEGER NOT NULL DEFAULT 1,
 
-    // Schema version check
-    const SCHEMA_VERSION = 1;
-    const row = this.db.prepare('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1').get() as { version: number } | undefined;
-    if (!row) {
-      this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(SCHEMA_VERSION, new Date().toISOString());
+              FOREIGN KEY (session_id) REFERENCES sessions(id)
+            );
+
+            -- Indexes
+            CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+            CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_memory_store ON memory_units(store);
+            CREATE INDEX IF NOT EXISTS idx_memory_status ON memory_units(status);
+            CREATE INDEX IF NOT EXISTS idx_memory_strength ON memory_units(strength);
+            CREATE INDEX IF NOT EXISTS idx_memory_classification ON memory_units(classification);
+            CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_units(session_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
+            CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
+          `,
+        },
+        {
+          version: 2,
+          description: 'Add embedding column to memory_units table',
+          sql: `
+            -- Check if embedding column already exists before adding
+            -- This is handled by checking SQLite master table
+            ALTER TABLE memory_units ADD COLUMN embedding BLOB;
+          `,
+        },
+      ];
+
+      // Run migrations sequentially
+      for (const migration of migrations) {
+        if (migration.version > currentVersion) {
+          log(`Applying migration ${migration.version}: ${migration.description}`);
+
+          // Special handling for migration 2 (embedding column) to handle existing databases
+          if (migration.version === 2) {
+            // Check if embedding column already exists
+            const columnExists = this.columnExists('memory_units', 'embedding');
+            if (columnExists) {
+              log(`Migration ${migration.version} skipped: embedding column already exists`);
+            } else {
+              this.db.exec(migration.sql);
+              log(`Migration ${migration.version} applied successfully`);
+            }
+          } else {
+            this.db.exec(migration.sql);
+            log(`Migration ${migration.version} applied successfully`);
+          }
+
+          // Record migration
+          this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+            migration.version,
+            new Date().toISOString()
+          );
+        }
+      }
+
+      // Commit transaction
+      this.db.exec('COMMIT');
+      log('Schema initialization completed successfully');
+    } catch (error) {
+      // Rollback on error
+      this.db.exec('ROLLBACK');
+      log('Schema initialization failed, transaction rolled back', error);
+      throw error;
     }
+  }
+
+  /**
+   * Check if a column exists in a table
+   */
+  private columnExists(tableName: string, columnName: string): boolean {
+    const row = this.db.prepare(
+      "SELECT 1 FROM pragma_table_info(?) WHERE name = ?"
+    ).get(tableName, columnName) as { '1': number } | undefined;
+    return row !== undefined;
   }
 
   // Session Operations
@@ -284,70 +352,67 @@ export class MemoryDatabase {
   ): Promise<MemoryUnit> {
     this.ensureInit();
 
-    // Phase 7: Reconsolidation - Check for similar memories if embedding is provided
-    if (features.embedding) {
-      const similarMemories = await this.vectorSearch(features.embedding, features.projectScope, 1);
+    // Begin transaction for reconsolidation and insertion
+    this.db.exec('BEGIN TRANSACTION');
 
-      if (similarMemories.length > 0) {
-        const existingMemory = similarMemories[0];
-        if (existingMemory && existingMemory.embedding) {
-          const similarity = this.cosineSimilarity(features.embedding, existingMemory.embedding);
+    try {
+      // Phase 7: Reconsolidation - Check for similar memories if embedding is provided
+      if (features.embedding) {
+        const similarMemories = await this.vectorSearch(features.embedding, features.projectScope, 1);
 
-          if (isRelevant(similarity)) {
-            // Call reconsolidation logic
-            const newMemoryData = {
-              store,
-              classification,
-              summary,
-              sourceEventIds,
-              projectScope: features.projectScope,
-              sessionId: features.sessionId,
-            };
+        if (similarMemories.length > 0) {
+          const existingMemory = similarMemories[0];
+          if (existingMemory && existingMemory.embedding) {
+            const similarity = this.cosineSimilarity(features.embedding, existingMemory.embedding);
 
-            const action = await handleReconsolidation(this, newMemoryData, existingMemory, similarity);
+            if (isRelevant(similarity)) {
+              // Call reconsolidation logic
+              const newMemoryData = {
+                store,
+                classification,
+                summary,
+                sourceEventIds,
+                projectScope: features.projectScope,
+                sessionId: features.sessionId,
+              };
 
-            switch (action.type) {
-              case 'duplicate':
-                // Increment frequency and return updated memory (no new insert)
-                return action.updatedMemory;
+              const action = await handleReconsolidation(this, newMemoryData, existingMemory, similarity);
 
-              case 'conflict':
-                // Delete existing, proceed with insert of new memory
-                this.db.prepare(`DELETE FROM memory_units WHERE id = ?`).run(existingMemory.id);
-                break;
+              switch (action.type) {
+                case 'duplicate':
+                  // Increment frequency and return updated memory (no new insert)
+                  this.db.exec('COMMIT');
+                  return action.updatedMemory;
 
-              case 'complement':
-                // Proceed with normal insert
-                break;
+                case 'conflict':
+                  // Delete existing, proceed with insert of new memory
+                  this.db.prepare(`DELETE FROM memory_units WHERE id = ?`).run(existingMemory.id);
+                  break;
+
+                case 'complement':
+                  // Proceed with normal insert
+                  break;
+              }
             }
           }
         }
       }
-    }
 
-    // Proceed with normal memory creation
-    const now = new Date();
-    const decayRate = store === 'stm' ? this.config.stmDecayRate : this.config.ltmDecayRate;
+      // Proceed with normal memory creation
+      const now = new Date();
+      const decayRate = store === 'stm' ? this.config.stmDecayRate : this.config.ltmDecayRate;
 
-    const memory: MemoryUnit = {
-      id: uuidv4(),
-      sessionId: features.sessionId,
-      store,
-      classification,
-      summary,
-      sourceEventIds,
-      projectScope: features.projectScope,
-      createdAt: now,
-      updatedAt: now,
-      lastAccessedAt: now,
-      recency: 0,
-      frequency: 1,
-      importance: features.importance ?? 0.5,
-      utility: features.utility ?? 0.5,
-      novelty: features.novelty ?? 0.5,
-      confidence: features.confidence ?? 0.5,
-      interference: 0,
-      strength: this.calculateStrength({
+      const memory: MemoryUnit = {
+        id: uuidv4(),
+        sessionId: features.sessionId,
+        store,
+        classification,
+        summary,
+        sourceEventIds,
+        projectScope: features.projectScope,
+        createdAt: now,
+        updatedAt: now,
+        lastAccessedAt: now,
         recency: 0,
         frequency: 1,
         importance: features.importance ?? 0.5,
@@ -355,51 +420,64 @@ export class MemoryDatabase {
         novelty: features.novelty ?? 0.5,
         confidence: features.confidence ?? 0.5,
         interference: 0,
-      }),
-      decayRate,
-      tags: features.tags ?? [],
-      associations: [],
-      status: 'active',
-      version: 1,
-      evidence: [],
-      embedding: features.embedding,
-    };
+        strength: this.calculateStrength({
+          recency: 0,
+          frequency: 1,
+          importance: features.importance ?? 0.5,
+          utility: features.utility ?? 0.5,
+          novelty: features.novelty ?? 0.5,
+          confidence: features.confidence ?? 0.5,
+          interference: 0,
+        }),
+        decayRate,
+        tags: features.tags ?? [],
+        associations: [],
+        status: 'active',
+        version: 1,
+        evidence: [],
+        embedding: features.embedding,
+      };
 
-    this.db.prepare(`
-      INSERT INTO memory_units (
-        id, session_id, store, classification, summary, source_event_ids, project_scope,
-        created_at, updated_at, last_accessed_at,
-        recency, frequency, importance, utility, novelty, confidence, interference,
-        strength, decay_rate, tags, associations, status, version, embedding
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      memory.id,
-      memory.sessionId ?? null,
-      memory.store,
-      memory.classification,
-      memory.summary,
-      JSON.stringify(memory.sourceEventIds),
-      memory.projectScope ?? null,
-      memory.createdAt.toISOString(),
-      memory.updatedAt.toISOString(),
-      memory.lastAccessedAt.toISOString(),
-      memory.recency,
-      memory.frequency,
-      memory.importance,
-      memory.utility,
-      memory.novelty,
-      memory.confidence,
-      memory.interference,
-      memory.strength,
-      memory.decayRate,
-      JSON.stringify(memory.tags),
-      JSON.stringify(memory.associations),
-      memory.status,
-      memory.version,
-      features.embedding ? Buffer.from(features.embedding.buffer) : null
-    );
+      this.db.prepare(`
+        INSERT INTO memory_units (
+          id, session_id, store, classification, summary, source_event_ids, project_scope,
+          created_at, updated_at, last_accessed_at,
+          recency, frequency, importance, utility, novelty, confidence, interference,
+          strength, decay_rate, tags, associations, status, version, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        memory.id,
+        memory.sessionId ?? null,
+        memory.store,
+        memory.classification,
+        memory.summary,
+        JSON.stringify(memory.sourceEventIds),
+        memory.projectScope ?? null,
+        memory.createdAt.toISOString(),
+        memory.updatedAt.toISOString(),
+        memory.lastAccessedAt.toISOString(),
+        memory.recency,
+        memory.frequency,
+        memory.importance,
+        memory.utility,
+        memory.novelty,
+        memory.confidence,
+        memory.interference,
+        memory.strength,
+        memory.decayRate,
+        JSON.stringify(memory.tags),
+        JSON.stringify(memory.associations),
+        memory.status,
+        memory.version,
+        features.embedding ? Buffer.from(features.embedding.buffer) : null
+      );
 
-    return memory;
+      this.db.exec('COMMIT');
+      return memory;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   getMemory(memoryId: string): MemoryUnit | null {
@@ -456,6 +534,7 @@ export class MemoryDatabase {
         classification IN (${userClassPlaceholders})
         OR (project_scope IS NOT NULL AND project_scope = ?)
       )
+      LIMIT 1000
     `;
     const params: any[] = [...userLevelClassifications, currentProject ?? ''];
 
@@ -660,7 +739,14 @@ export class MemoryDatabase {
       status: row.status as MemoryStatus,
       version: row.version,
       evidence: [],
-      embedding: row.embedding ? new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT) : undefined,
+      embedding: row.embedding ? (() => {
+        try {
+          return new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT);
+        } catch (error) {
+          // Handle potential alignment or corruption issues gracefully
+          return undefined;
+        }
+      })() : undefined,
     };
   }
 

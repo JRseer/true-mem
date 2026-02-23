@@ -49,6 +49,11 @@ export async function handleReconsolidation(
   existingMemory: MemoryUnit,
   similarity: number
 ): Promise<ReconsolidationAction> {
+  // Classification-aware: if classifications differ, treat as complement
+  if (newMemoryData.classification !== existingMemory.classification) {
+    return { type: 'complement', newMemory: newMemoryData as MemoryUnit };
+  }
+
   if (similarity > SIMILARITY_THRESHOLDS.DUPLICATE) {
     // Duplicate: Increment frequency and update timestamp
     return await handleDuplicate(db, newMemoryData, existingMemory);
