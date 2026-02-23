@@ -19,6 +19,7 @@ import type {
 } from '../types.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
+import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 
 /**
  * Resolve database path, expanding ~ to home directory
@@ -138,6 +139,8 @@ export class MemoryDatabase {
 
         status TEXT NOT NULL DEFAULT 'active',
         version INTEGER NOT NULL DEFAULT 1,
+
+        embedding BLOB,
 
         FOREIGN KEY (session_id) REFERENCES sessions(id)
       );
@@ -263,7 +266,7 @@ export class MemoryDatabase {
   }
 
   // Memory Operations
-  createMemory(
+  async createMemory(
     store: MemoryStore,
     classification: MemoryClassification,
     summary: string,
@@ -276,10 +279,53 @@ export class MemoryDatabase {
       novelty: number;
       confidence: number;
       tags: string[];
+      embedding: Float32Array;
     }> = {}
-  ): MemoryUnit {
+  ): Promise<MemoryUnit> {
     this.ensureInit();
 
+    // Phase 7: Reconsolidation - Check for similar memories if embedding is provided
+    if (features.embedding) {
+      const similarMemories = await this.vectorSearch(features.embedding, features.projectScope, 1);
+
+      if (similarMemories.length > 0) {
+        const existingMemory = similarMemories[0];
+        if (existingMemory && existingMemory.embedding) {
+          const similarity = this.cosineSimilarity(features.embedding, existingMemory.embedding);
+
+          if (isRelevant(similarity)) {
+            // Call reconsolidation logic
+            const newMemoryData = {
+              store,
+              classification,
+              summary,
+              sourceEventIds,
+              projectScope: features.projectScope,
+              sessionId: features.sessionId,
+            };
+
+            const action = await handleReconsolidation(this, newMemoryData, existingMemory, similarity);
+
+            switch (action.type) {
+              case 'duplicate':
+                // Increment frequency and return updated memory (no new insert)
+                return action.updatedMemory;
+
+              case 'conflict':
+                // Delete existing, proceed with insert of new memory
+                this.db.prepare(`DELETE FROM memory_units WHERE id = ?`).run(existingMemory.id);
+                break;
+
+              case 'complement':
+                // Proceed with normal insert
+                break;
+            }
+          }
+        }
+      }
+    }
+
+    // Proceed with normal memory creation
     const now = new Date();
     const decayRate = store === 'stm' ? this.config.stmDecayRate : this.config.ltmDecayRate;
 
@@ -316,6 +362,7 @@ export class MemoryDatabase {
       status: 'active',
       version: 1,
       evidence: [],
+      embedding: features.embedding,
     };
 
     this.db.prepare(`
@@ -323,8 +370,8 @@ export class MemoryDatabase {
         id, session_id, store, classification, summary, source_event_ids, project_scope,
         created_at, updated_at, last_accessed_at,
         recency, frequency, importance, utility, novelty, confidence, interference,
-        strength, decay_rate, tags, associations, status, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        strength, decay_rate, tags, associations, status, version, embedding
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       memory.id,
       memory.sessionId ?? null,
@@ -348,7 +395,8 @@ export class MemoryDatabase {
       JSON.stringify(memory.tags),
       JSON.stringify(memory.associations),
       memory.status,
-      memory.version
+      memory.version,
+      features.embedding ? Buffer.from(features.embedding.buffer) : null
     );
 
     return memory;
@@ -387,6 +435,73 @@ export class MemoryDatabase {
 
     const rows = this.db.prepare(query).all(...params) as any[];
     return rows.map(this.rowToMemoryUnit.bind(this));
+  }
+
+  /**
+   * Vector similarity search using cosine similarity
+   * Returns top-k memories sorted by similarity to query embedding
+   */
+  async vectorSearch(queryEmbedding: Float32Array, currentProject?: string, limit: number = 10): Promise<MemoryUnit[]> {
+    this.ensureInit();
+
+    // Fetch all active memories with embeddings for the current scope
+    const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
+    const userClassPlaceholders = userLevelClassifications.map(() => '?').join(', ');
+
+    const query = `
+      SELECT * FROM memory_units
+      WHERE status = 'active'
+      AND embedding IS NOT NULL
+      AND (
+        classification IN (${userClassPlaceholders})
+        OR (project_scope IS NOT NULL AND project_scope = ?)
+      )
+    `;
+    const params: any[] = [...userLevelClassifications, currentProject ?? ''];
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+    const memories = rows.map(this.rowToMemoryUnit.bind(this));
+
+    // Calculate cosine similarity for each memory
+    const results = memories
+      .map((memory) => {
+        if (!memory.embedding) {
+          return null;
+        }
+        const similarity = this.cosineSimilarity(queryEmbedding, memory.embedding);
+        return { memory, similarity };
+      })
+      .filter((result): result is { memory: MemoryUnit; similarity: number } => result !== null);
+
+    // Sort by similarity (descending) and return top-k
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, limit).map((r) => r.memory);
+  }
+
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    if (a.length !== b.length) {
+      return 0;
+    }
+
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i]! * b[i]!;
+      normA += a[i]! * a[i]!;
+      normB += b[i]! * b[i]!;
+    }
+
+    const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+    if (denominator === 0) {
+      return 0;
+    }
+
+    return dotProduct / denominator;
   }
 
   updateMemoryStrength(memoryId: string, strength: number): void {
@@ -545,6 +660,7 @@ export class MemoryDatabase {
       status: row.status as MemoryStatus,
       version: row.version,
       evidence: [],
+      embedding: row.embedding ? new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT) : undefined,
     };
   }
 

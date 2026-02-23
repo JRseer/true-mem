@@ -9,6 +9,8 @@ import { MemoryDatabase, createMemoryDatabase } from '../../storage/database.js'
 import { log } from '../../logger.js';
 import { shouldStoreMemory, inferClassification } from '../../memory/classifier.js';
 import { matchAllPatterns } from '../../memory/patterns.js';
+import { embed } from '../../memory/embeddings.js';
+import { getExtractionQueue } from '../../extraction/queue.js';
 
 // Debounce state for message.updated events
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,11 +112,8 @@ export async function createTrueMemoryPlugin(
           await handleSessionCreated(state, sessionId);
           break;
         case 'session.idle':
-          // Use queueMicrotask for non-blocking execution
-          queueMicrotask(() => {
-            handleSessionIdle(state, sessionId)
-              .catch(err => log(`Session idle error: ${err}`));
-          });
+          // Add extraction job to queue for sequential processing
+          queueExtractionJob(state, sessionId);
           break;
         case 'session.deleted':
         case 'session.error':
@@ -161,6 +160,21 @@ export async function createTrueMemoryPlugin(
   };
 }
 
+// Queue helper for session idle processing
+function queueExtractionJob(
+  state: TrueMemoryAdapterState,
+  sessionId?: string
+): void {
+  const queue = getExtractionQueue();
+
+  queue.add({
+    description: `session:${sessionId ?? state.currentSessionId}`,
+    execute: async () => {
+      await processSessionIdle(state, sessionId);
+    },
+  });
+}
+
 // Session handlers
 async function handleSessionCreated(
   state: TrueMemoryAdapterState,
@@ -171,6 +185,17 @@ async function handleSessionCreated(
   state.currentSessionId = sessionId;
   state.injectedSessions.add(sessionId);
   log(`Session created: ${sessionId}`);
+  
+  // Run maintenance: decay and consolidation
+  try {
+    const decayed = state.db.applyDecay();
+    const promoted = state.db.runConsolidation();
+    if (decayed > 0 || promoted > 0) {
+      log(`Maintenance: decayed ${decayed} memories, promoted ${promoted} to LTM`);
+    }
+  } catch (err) {
+    log(`Maintenance error: ${err}`);
+  }
   
   // Create session in DB
   state.db.createSession(state.worktree, { agentType: 'opencode' });
@@ -185,19 +210,19 @@ async function handleSessionCreated(
   }
 }
 
-async function handleSessionIdle(
+async function processSessionIdle(
   state: TrueMemoryAdapterState,
   sessionId?: string
 ): Promise<void> {
   const effectiveSessionId = sessionId ?? state.currentSessionId;
   if (!effectiveSessionId) return;
-  
+
   if (sessionId && !state.currentSessionId) {
     state.currentSessionId = sessionId;
   }
-  
+
   const watermark = state.db.getMessageWatermark(effectiveSessionId);
-  
+
   let messages: MessageContainer[];
   try {
     const response = await state.client.session.messages({ path: { id: effectiveSessionId } });
@@ -210,12 +235,12 @@ async function handleSessionIdle(
     log(`Failed to fetch messages: ${error}`);
     return;
   }
-  
+
   if (!messages || messages.length <= watermark) return;
-  
+
   const newMessages = messages.slice(watermark);
   const conversationText = extractConversationText(newMessages);
-  
+
   if (!conversationText.trim()) {
     state.db.updateMessageWatermark(effectiveSessionId, messages.length);
     return;
@@ -243,8 +268,11 @@ async function handleSessionIdle(
         const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
         const scope = userLevelClassifications.includes(classification) ? undefined : state.worktree;
 
+        // Generate embedding for the memory
+        const embedding = await embed(conversationText);
+
         // Store memory
-        state.db.createMemory(
+        await state.db.createMemory(
           'stm',
           classification as any,
           conversationText.slice(0, 500), // Summary from text
@@ -254,6 +282,7 @@ async function handleSessionIdle(
             projectScope: scope,
             importance: result.confidence,
             confidence: result.confidence,
+            embedding,
           }
         );
 
@@ -285,21 +314,33 @@ async function handleMessageUpdated(
   state: TrueMemoryAdapterState,
   eventProps: Record<string, unknown> | undefined
 ): Promise<void> {
-  const info = eventProps?.info as { sessionID?: string; role?: string } | undefined;
+  const info = eventProps?.info as { sessionID?: string; role?: string; parts?: Part[] } | undefined;
   const sessionId = info?.sessionID ?? (eventProps?.sessionID as string | undefined) ?? state.currentSessionId;
   if (!sessionId) return;
-  
+
   if (!state.currentSessionId && sessionId) {
     state.currentSessionId = sessionId;
   }
-  
+
   // Lazy injection for continued sessions
   const role = info?.role ?? (eventProps?.role as string | undefined);
   if (role === 'user' && !state.injectedSessions.has(sessionId)) {
     state.injectedSessions.add(sessionId);
     log(`Lazy injection for session ${sessionId}`);
-    
-    const memories = await getRelevantMemories(state, state.config.opencode.maxSessionStartMemories);
+
+    // Extract user's message content for contextual retrieval
+    let userQuery: string | undefined;
+    const parts = info?.parts ?? (eventProps?.parts as Part[] | undefined);
+    if (parts && parts.length > 0) {
+      for (const part of parts) {
+        if (part.type === 'text' && 'text' in part) {
+          userQuery = (part as { text: string }).text;
+          break;
+        }
+      }
+    }
+
+    const memories = await getRelevantMemories(state, state.config.opencode.maxSessionStartMemories, userQuery);
     if (memories.length > 0) {
       const memoryContext = formatMemoriesForInjection(memories, state.worktree);
       await injectContext(state, sessionId, memoryContext);
@@ -351,8 +392,15 @@ function extractConversationText(messages: MessageContainer[]): string {
   return lines.join('\n');
 }
 
-async function getRelevantMemories(state: TrueMemoryAdapterState, limit: number): Promise<MemoryUnit[]> {
-  return state.db.getMemoriesByScope(state.worktree, limit);
+async function getRelevantMemories(state: TrueMemoryAdapterState, limit: number, query?: string): Promise<MemoryUnit[]> {
+  if (query) {
+    // Generate embedding for query and use vector search
+    const embedding = await embed(query);
+    return state.db.vectorSearch(embedding, state.worktree, limit);
+  } else {
+    // Fall back to scope-based retrieval
+    return state.db.getMemoriesByScope(state.worktree, limit);
+  }
 }
 
 function formatMemoriesForInjection(memories: MemoryUnit[], currentProject?: string): string {

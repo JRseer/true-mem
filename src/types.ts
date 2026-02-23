@@ -105,11 +105,11 @@ export interface MemoryUnit {
   summary: string;
   sourceEventIds: string[];
   projectScope?: string | undefined;
-  
+
   createdAt: Date;
   updatedAt: Date;
   lastAccessedAt: Date;
-  
+
   recency: number;
   frequency: number;
   importance: number;
@@ -117,17 +117,18 @@ export interface MemoryUnit {
   novelty: number;
   confidence: number;
   interference: number;
-  
+
   strength: number;
   decayRate: number;
-  
+
   tags: string[];
   associations: string[];
-  
+
   status: MemoryStatus;
   version: number;
-  
+
   evidence: MemoryEvidence[];
+  embedding?: Float32Array | undefined;
 }
 
 export interface MemoryEvidence {
