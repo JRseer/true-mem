@@ -7,6 +7,8 @@ import type { PsychMemConfig, MemoryUnit } from '../../types.js';
 import { DEFAULT_CONFIG } from '../../config.js';
 import { MemoryDatabase, createMemoryDatabase } from '../../storage/database.js';
 import { log } from '../../logger.js';
+import { shouldStoreMemory, inferClassification } from '../../memory/classifier.js';
+import { matchAllPatterns } from '../../memory/patterns.js';
 
 // Debounce state for message.updated events
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -218,9 +220,50 @@ async function handleSessionIdle(
     state.db.updateMessageWatermark(effectiveSessionId, messages.length);
     return;
   }
-  
-  // Extract memories (simplified)
+
+  // Extract memories using classifier
   log(`Processing ${newMessages.length} new messages`);
+
+  // Get signals from patterns
+  const signals = matchAllPatterns(conversationText);
+
+  if (signals.length > 0) {
+    // Calculate base signal score (average weight of matched signals)
+    const baseSignalScore = signals.reduce((sum, s) => sum + s.weight, 0) / signals.length;
+
+    // Infer classification from text
+    const classification = inferClassification(conversationText);
+
+    if (classification) {
+      // Apply three-layer defense
+      const result = shouldStoreMemory(conversationText, classification, baseSignalScore);
+
+      if (result.store) {
+        // Determine scope
+        const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
+        const scope = userLevelClassifications.includes(classification) ? undefined : state.worktree;
+
+        // Store memory
+        state.db.createMemory(
+          'stm',
+          classification as any,
+          conversationText.slice(0, 500), // Summary from text
+          [],
+          {
+            sessionId: effectiveSessionId,
+            projectScope: scope,
+            importance: result.confidence,
+            confidence: result.confidence,
+          }
+        );
+
+        log(`Stored ${classification} memory (confidence: ${result.confidence.toFixed(2)})`);
+      } else {
+        log(`Skipped ${classification} memory: ${result.reason}`);
+      }
+    }
+  }
+
   state.db.updateMessageWatermark(effectiveSessionId, messages.length);
 }
 
