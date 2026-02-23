@@ -3,7 +3,8 @@
  * Vector embeddings using Transformers.js (local, private, free)
  */
 
-import { log } from '../logger';
+import { log } from '../logger.js';
+import { registerShutdownHandler } from '../shutdown.js';
 
 // =============================================================================
 // Singleton Embedding Pipeline
@@ -49,12 +50,18 @@ class EmbeddingPipeline {
       try {
         log('Embeddings: Loading model Xenova/all-MiniLM-L6-v2...');
 
+        // Silence ONNX Runtime warnings
+        process.env.ORT_LOGGING_LEVEL = '2';
+
         // Use eval for dynamic import to bypass bun build's static analysis and name mangling
         const transformers = await eval('import("@huggingface/transformers")');
         log('Embeddings: Transformers keys:', Object.keys(transformers).slice(0, 20));
 
         const pipeline = transformers.pipeline;
         const env = transformers.env;
+
+        // Silence Transformers.js warnings
+        transformers.env.logLevel = 'error';
 
         if (!pipeline) {
           log('Embeddings: ERROR - pipeline not found in transformers object');
@@ -68,6 +75,8 @@ class EmbeddingPipeline {
           'feature-extraction',
           'Xenova/all-MiniLM-L6-v2',
           {
+            dtype: 'fp16',
+            device: 'cpu',
             progress_callback: (progress: any) => {
               if (progress.status === 'progress') {
                 const percent = progress.progress ? Math.round(progress.progress * 100) : 0;
@@ -81,6 +90,9 @@ class EmbeddingPipeline {
 
         this.isInitialized = true;
         log('Embeddings: Model loaded successfully (Xenova/all-MiniLM-L6-v2)');
+
+        // Register shutdown handler for graceful disposal
+        registerShutdownHandler('embedding-pipeline', () => this.dispose());
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log('Embeddings: Failed to load model', { error: errorMessage });
@@ -137,6 +149,7 @@ class EmbeddingPipeline {
   /**
    * Dispose of the embedding pipeline to free memory
    * Should be called when the plugin is shutting down
+   * Idempotent: safe to call multiple times
    */
   public async dispose(): Promise<void> {
     try {
@@ -149,15 +162,29 @@ class EmbeddingPipeline {
       if (this.pipeline) {
         // Transformers.js pipelines may have a dispose method for proper cleanup
         if (typeof this.pipeline.dispose === 'function') {
-          log('Embeddings: Calling pipeline.dispose()');
-          await this.pipeline.dispose();
+          log('Embeddings: Calling pipeline.dispose() with 3s timeout');
+          try {
+            await Promise.race([
+              this.pipeline.dispose(),
+              new Promise<void>((_, reject) =>
+                setTimeout(() => reject(new Error('Pipeline dispose timeout after 3 seconds')), 3000)
+              ),
+            ]);
+            log('Embeddings: Pipeline disposed successfully');
+          } catch (disposeError) {
+            const timeoutMsg = disposeError instanceof Error ? disposeError.message : String(disposeError);
+            log(`Embeddings: Pipeline dispose ${timeoutMsg}, forcing cleanup`);
+            // Continue with forced cleanup even if dispose times out
+          }
         }
 
         // Clear the reference and let garbage collection handle it
         this.pipeline = null;
         this.isInitialized = false;
         this.initializationPromise = null;
-        log('Embeddings: Pipeline disposed');
+        log('Embeddings: Pipeline disposed (forced cleanup)');
+      } else {
+        log('Embeddings: Pipeline already disposed or never initialized');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

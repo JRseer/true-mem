@@ -13,6 +13,7 @@ import { shouldStoreMemory, classifyWithExplicitIntent } from '../../memory/clas
 import { matchAllPatterns } from '../../memory/patterns.js';
 import { embed } from '../../memory/embeddings.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
+import { registerShutdownHandler, executeShutdown } from '../../shutdown.js';
 
 // Debounce state for message.updated events
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,7 +90,10 @@ export async function createTrueMemoryPlugin(
   // Initialize database
   const db = await createMemoryDatabase(config);
   log('Database initialized');
-  
+
+  // Register shutdown handler for database
+  registerShutdownHandler('database', () => db.close());
+
   // Resolve project root
   const worktree = (!ctx.worktree || ctx.worktree === '/' || ctx.worktree === '\\')
     ? ctx.directory
@@ -110,28 +114,8 @@ export async function createTrueMemoryPlugin(
   const projectName = worktree.split(/[/\\]/).pop() || 'Unknown';
   const startupMessage = `🧠 True-Memory: Plugin loaded successfully | v2.0.1 [${BUILD_TIME}] | Mode: Vector (Transformers.js) | Project: ${projectName}`;
 
-  // Log to file-based logger
+  // Log to file-based logger only (to avoid overwriting OpenCode TUI during lazy initialization)
   log(startupMessage);
-
-  // Log to OpenCode TUI (with error handling)
-  try {
-    const app = ctx.client?.app;
-    if (app && typeof app.log === 'function') {
-      // PsychMem-style body structure
-      (app.log as any)({
-        body: {
-          service: 'true-memory',
-          level: 'info',
-          message: startupMessage,
-        },
-      });
-    }
-  } catch (error) {
-    // Silently ignore if ctx.client.app.log is unavailable or fails
-  }
-
-  // Log to terminal for visibility
-  console.log(startupMessage);
 
   return {
     event: async ({ event }) => {
@@ -153,6 +137,11 @@ export async function createTrueMemoryPlugin(
         case 'session.deleted':
         case 'session.error':
           await handleSessionEnd(state, event.type, sessionId);
+          break;
+        case 'server.instance.disposed':
+          // Server is shutting down, execute graceful shutdown
+          log('Server instance disposed, executing shutdown sequence');
+          await executeShutdown('server.instance.disposed');
           break;
         case 'message.updated':
           if (state.config.opencode.extractOnMessage) {
@@ -282,6 +271,8 @@ async function processSessionIdle(
   const newMessages = messages.slice(watermark);
   const conversationText = extractConversationText(newMessages);
 
+  log('Debug: Clean conversation text (start):', conversationText.slice(0, 200));
+
   if (!conversationText.trim()) {
     state.db.updateMessageWatermark(effectiveSessionId, messages.length);
     return;
@@ -308,6 +299,7 @@ async function processSessionIdle(
 
   // Get signals from patterns
   const signals = matchAllPatterns(conversationText);
+  log('Debug: Detected signals:', JSON.stringify(signals));
 
   let extractionAttempted = false;
   let extractionSucceeded = false;
@@ -320,11 +312,11 @@ async function processSessionIdle(
       const baseSignalScore = signals.reduce((sum, s) => sum + s.weight, 0) / signals.length;
 
       // Classify with explicit intent detection
-      const { classification, confidence } = classifyWithExplicitIntent(conversationText, signals);
+      const { classification, confidence, isolatedContent } = classifyWithExplicitIntent(conversationText, signals);
 
       if (classification) {
         // Apply three-layer defense
-        const result = shouldStoreMemory(conversationText, classification, baseSignalScore);
+        const result = shouldStoreMemory(isolatedContent, classification, baseSignalScore);
 
         if (result.store) {
           // Determine scope
@@ -332,13 +324,13 @@ async function processSessionIdle(
           const scope = userLevelClassifications.includes(classification) ? undefined : state.worktree;
 
           // Generate embedding for the memory
-          const embedding = await embed(conversationText);
+          const embedding = await embed(isolatedContent);
 
           // Store memory
           await state.db.createMemory(
             'stm',
             classification as any,
-            extractCleanSummary(conversationText), // Clean summary without prefixes
+            extractCleanSummary(isolatedContent), // Clean summary without prefixes
             [],
             {
               sessionId: effectiveSessionId,

@@ -730,8 +730,16 @@ export class MemoryDatabase {
   }
 
   close(): void {
-    if (this.db) {
-      this.db.close();
+    try {
+      if (this.db) {
+        this.db.close();
+        log('Database connection closed');
+      } else {
+        log('Database already closed or not initialized');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log('Error closing database connection', { error: errorMessage });
     }
   }
 }

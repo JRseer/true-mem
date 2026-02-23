@@ -494,6 +494,10 @@ grep -i "error" ~/.true-memory/plugin-debug.log
 
 Quando si lancia un task in background (`background_task`), NON controllare lo stato ogni 5 secondi. Attendi la notifica automatica di completamento. Questo evita spreco di token e rumore nei log.
 
+### Best Practice: Manual Cleanup for Testing
+
+Durante la fase di test e sviluppo, è preferibile che l'utente esegua manualmente la pulizia delle directory persistenti (es. `rm -rf ~/.true-memory/`) invece di delegare il task all'AI. Questo permette di risparmiare token e garantisce un controllo totale sull'ambiente di test.
+
 ---
 
 ## Risorse

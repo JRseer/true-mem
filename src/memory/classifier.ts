@@ -7,6 +7,7 @@
  */
 
 import { matchesNegativePattern } from './negative-patterns.js';
+import { log } from '../logger.js';
 
 // Classification keywords for multi-keyword scoring
 const CLASSIFICATION_KEYWORDS: Record<string, { primary: string[]; boosters: string[] }> = {
@@ -141,65 +142,90 @@ export function inferClassification(text: string): string | null {
 export function classifyWithExplicitIntent(
   text: string,
   signals: any[]
-): { classification: string | null; confidence: number } {
+): { classification: string | null; confidence: number; isolatedContent: string } {
   // Check if explicit_remember signal is present
   const hasExplicitRemember = signals.some(s => s.type === 'explicit_remember');
+
+  if (hasExplicitRemember) {
+    log('Debug: Explicit intent signal found, isolating sentence...');
+  }
 
   if (!hasExplicitRemember) {
     // Fall back to normal classification
     const classification = inferClassification(text);
     const confidence = classification ? calculateClassificationScore(text, classification) : 0;
-    return { classification, confidence };
+    return { classification, confidence, isolatedContent: text };
   }
 
-  // Extract explicit remember marker patterns
+  // Extract explicit remember marker patterns with word boundaries and optional colon/whitespace
   const markerPatterns = [
-    /ricorda questo/gi,
-    /remember this/gi,
-    /ricorda/gi,
-    /remember/gi,
-    /tieni a mente/gi,
-    /keep in mind/gi,
-    /nota che/gi,
-    /note that/gi,
+    /\bricorda questo\b:?\s*/gi,
+    /\bremember this\b:?\s*/gi,
+    /\bricorda\b:?\s*/gi,
+    /\bremember\b:?\s*/gi,
+    /\btieni a mente\b:?\s*/gi,
+    /\bkeep in mind\b:?\s*/gi,
+    /\bnota che\b:?\s*/gi,
+    /\bnote that\b:?\s*/gi,
   ];
 
-  // Find the sentence containing the explicit marker
+  // Find the LAST sentence containing the explicit marker
   const sentences = text.match(/[^.!?]*[.!?]/g) || [];
-  let targetSentence = '';
+  let lastMatchingSentence = '';
+  let isolatedContent = '';
 
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (markerPatterns.some(pattern => pattern.test(trimmed))) {
-      targetSentence = trimmed;
-      break;
+
+    // Check each pattern with lastIndex reset for regex safety
+    for (const pattern of markerPatterns) {
+      pattern.lastIndex = 0; // Reset regex lastIndex before testing
+      if (pattern.test(trimmed)) {
+        lastMatchingSentence = trimmed;
+
+        // Extract content AFTER the marker
+        pattern.lastIndex = 0; // Reset again for exec
+        const match = pattern.exec(trimmed);
+        if (match && match.index !== undefined) {
+          isolatedContent = trimmed.substring(match.index + match[0].length).trim();
+        }
+        break; // Move to next sentence after finding match
+      }
     }
   }
 
-  // If no sentence found with marker, classify entire text
-  const textToClassify = targetSentence || text;
+  // If no content isolated, fall back to normal classification
+  if (!isolatedContent) {
+    log('Debug: No content isolated, falling back to normal classification');
+    const classification = inferClassification(text);
+    const confidence = classification ? calculateClassificationScore(text, classification) : 0;
+    return { classification, confidence, isolatedContent: text };
+  }
 
-  // Score ONLY the target sentence for all classifications
+  log('Debug: Isolated content for classification:', isolatedContent);
+
+  // Score ONLY the isolated content for all classifications
   let bestClassification: string | null = null;
   let bestScore = 0;
 
   for (const [classification] of Object.entries(CLASSIFICATION_KEYWORDS)) {
-    const score = calculateClassificationScore(textToClassify, classification);
+    const score = calculateClassificationScore(isolatedContent, classification);
     if (score > bestScore) {
       bestScore = score;
       bestClassification = classification;
     }
   }
 
-  // Lower threshold for explicit remember (0.4 instead of 0.6)
+  // If classification found with score >= 0.4, return with boosted confidence (min 0.85)
   if (bestScore >= 0.4 && bestClassification) {
-    // Boost confidence to at least 0.85 for explicit remember
     const boostedConfidence = Math.max(0.85, bestScore);
-    return { classification: bestClassification, confidence: boostedConfidence };
+    log(`Debug: Explicit intent classification: ${bestClassification}, score: ${bestScore}, boosted: ${boostedConfidence}`);
+    return { classification: bestClassification, confidence: boostedConfidence, isolatedContent };
   }
 
-  // Fall back to normal classification if explicit sentence doesn't match
+  // Fall back to normal classification if isolated content doesn't match
+  log('Debug: No classification found in isolated content, falling back to normal classification');
   const fallbackClassification = inferClassification(text);
   const fallbackConfidence = fallbackClassification ? calculateClassificationScore(text, fallbackClassification) : 0;
-  return { classification: fallbackClassification, confidence: fallbackConfidence };
+  return { classification: fallbackClassification, confidence: fallbackConfidence, isolatedContent: text };
 }
