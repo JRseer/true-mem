@@ -183,16 +183,16 @@ export async function createDatabase(dbPath: string): Promise<SqliteDatabase> {
 
 ---
 
-## I 5 Miglioramenti (dal feedback Reddit)
+## I 6 Miglioramenti (dal feedback Reddit + analisi)
 
 1. **Decay Intelligente** - Decay solo per `episodic`, le altre permangono
 2. **Vector Embeddings** - Cosine similarity invece di Jaccard
 3. **Retrieval Contestuale** - Top-k invece di injection globale
 4. **Estrazione Asincrona** - Fire-and-forget per non bloccare l'UI
 5. **Reconsolidation LLM** - Valutazione conflitti via LLM
+6. **False Positive Prevention** - Three-layer defense (negative patterns + multi-keyword + threshold)
 
 Vedi `PLAN.md` per i dettagli implementativi.
-LLM eval: conflitto, complemento o duplicato?
 
 ---
 

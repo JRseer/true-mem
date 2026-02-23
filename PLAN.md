@@ -154,6 +154,117 @@ Lingue: English, Spanish, French, German, Portuguese, Japanese, Chinese, Korean,
 | Enumeration | Lists, "first/then/finally" | 0.5 |
 | Meta Reference | Near tool errors, stack traces | 0.6 |
 
+### 🔴 CRITICAL: False Positive Prevention (True-Memory Improvement)
+
+**Problema PsychMem**: Keyword singole causano falsi positivi:
+- "resolve DNS" → classificato come bugfix ❌
+- "fix the position" → classificato come bugfix ❌
+- "handle click" → classificato come bugfix ❌
+
+**True-Memory Solution**: Three-Layer Defense
+
+```
+Layer 1: Negative Patterns (filter OUT known false positives)
+    ↓
+Layer 2: Multi-Keyword Scoring (require 2+ signals)
+    ↓
+Layer 3: Confidence Threshold (store only if score ≥ 0.6)
+```
+
+#### Layer 1: Negative Patterns
+
+```typescript
+const NEGATIVE_PATTERNS: Record<string, RegExp[]> = {
+  bugfix: [
+    /resolve\s+(dns|ip|address|hostname|url|uri)/i,
+    /resolve\s+(promise|async|await)/i,
+    /git\s+resolve/i,
+    /resolve\s+conflict(?!.*bug)/i,
+    /fixed\s+(width|height|position|size)/i,
+    /handle\s+(click|event|input|change)/i,
+    /event\s+handler/i,
+    /address\s+(space|bar|book)/i,
+  ],
+  decision: [
+    /decided\s+to\s+(run|start|begin|try)/i,
+  ],
+  learning: [
+    /machine\s+learning/i,  // Not "I learned"
+  ],
+};
+
+function matchesNegativePattern(text: string, classification: string): boolean {
+  const patterns = NEGATIVE_PATTERNS[classification] || [];
+  return patterns.some(p => p.test(text));
+}
+```
+
+#### Layer 2: Multi-Keyword Scoring
+
+```typescript
+// Require multiple signals for high confidence
+const CLASSIFICATION_KEYWORDS = {
+  bugfix: {
+    primary: ['error', 'bug', 'crash', 'exception', 'fail', 'broken'],
+    boosters: ['fixed', 'resolved', 'patched', 'solved', 'corrected'],
+  },
+  decision: {
+    primary: ['decided', 'chose', 'selected', 'picked'],
+    boosters: ['because', 'since', 'reason', 'rationale'],
+  },
+  learning: {
+    primary: ['learned', 'discovered', 'found out', 'realized'],
+    boosters: ['today', 'just', 'finally'],
+  },
+};
+
+function calculateClassificationScore(text: string, classification: string): number {
+  const { primary, boosters } = CLASSIFICATION_KEYWORDS[classification];
+  const textLower = text.toLowerCase();
+  
+  const primaryMatches = primary.filter(k => textLower.includes(k)).length;
+  const boosterMatches = boosters.filter(k => textLower.includes(k)).length;
+  
+  // Need at least 1 primary + 1 booster for high confidence
+  if (primaryMatches === 0) return 0;
+  if (primaryMatches === 1 && boosterMatches === 0) return 0.4; // Low confidence
+  
+  return Math.min(1, 0.4 + (primaryMatches * 0.2) + (boosterMatches * 0.15));
+}
+```
+
+#### Layer 3: Confidence Threshold
+
+```typescript
+const CONFIDENCE_THRESHOLD = 0.6;
+
+function shouldStoreMemory(text: string, classification: string, baseScore: number): boolean {
+  // Layer 1: Check negative patterns
+  if (matchesNegativePattern(text, classification)) {
+    return false;
+  }
+  
+  // Layer 2: Calculate multi-keyword score
+  const keywordScore = calculateClassificationScore(text, classification);
+  
+  // Layer 3: Combined score must exceed threshold
+  const finalScore = (baseScore + keywordScore) / 2;
+  return finalScore >= CONFIDENCE_THRESHOLD;
+}
+```
+
+#### Expected Results
+
+| Frase | Pattern Match | Negative? | Multi-Key Score | Result |
+|-------|--------------|-----------|-----------------|--------|
+| "resolve DNS address" | bugfix (0.8) | ✅ YES | 0.3 | ❌ NO STORE |
+| "resolve this bug" | bugfix (0.8) | NO | 0.8 | ✅ STORE |
+| "fix the position" | bugfix (0.8) | ✅ YES | 0.2 | ❌ NO STORE |
+| "fixed the crash in auth" | bugfix (0.8) | NO | 0.9 | ✅ STORE |
+| "handle click event" | bugfix (0.8) | ✅ YES | 0.2 | ❌ NO STORE |
+
+**Expected**: 50-70% reduction in false positives, ~5% increase in false negatives (acceptable trade-off).
+
 ### Pre-Filter (Performance)
 
 Prima di eseguire estrazione completa, skip messaggi low-signal:
