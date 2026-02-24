@@ -222,6 +222,24 @@ export function classifyWithExplicitIntent(
     }
   }
 
+  // Fallback: if no sentence with punctuation matched, try the entire text
+  // This handles cases where text doesn't end with punctuation (e.g., truncated messages)
+  if (!isolatedContent) {
+    const trimmedText = text.trim();
+    for (const pattern of markerPatterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(trimmedText)) {
+        pattern.lastIndex = 0;
+        const match = pattern.exec(trimmedText);
+        if (match && match.index !== undefined) {
+          isolatedContent = trimmedText.substring(match.index + match[0].length).trim();
+          log('Debug: Used entire text as fallback for sentence extraction');
+        }
+        break;
+      }
+    }
+  }
+
   // If no content isolated, fall back to normal classification
   if (!isolatedContent) {
     log('Debug: No content isolated, falling back to normal classification');
