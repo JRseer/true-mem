@@ -17,19 +17,20 @@ export type ReconsolidationAction =
 
 /**
  * Similarity thresholds for reconsolidation decisions
+ * Adjusted for Jaccard similarity (word overlap) - lower than semantic embeddings
  */
 const SIMILARITY_THRESHOLDS = {
-  DUPLICATE: 0.95,
-  CONFLICT: 0.8,
-  MIN_RELEVANT: 0.7,
+  DUPLICATE: 0.85,  // Was 0.95 - lowered for Jaccard word-overlap
+  CONFLICT: 0.7,    // Was 0.8
+  MIN_RELEVANT: 0.5, // Was 0.7
 } as const;
 
 /**
  * Handle memory reconsolidation based on similarity
  *
  * This function determines how to handle a new memory compared to an existing one:
- * - similarity > 0.95: Duplicate (increment frequency, update timestamp)
- * - similarity > 0.8: Conflict (newer wins - replace existing)
+ * - similarity > 0.85: Duplicate (increment frequency, update timestamp)
+ * - similarity > 0.7: Conflict (newer wins - replace existing)
  * - otherwise: Complement (store as new memory)
  *
  * @param db - The database instance
@@ -67,7 +68,7 @@ export async function handleReconsolidation(
 }
 
 /**
- * Handle duplicate memory (similarity > 0.95)
+ * Handle duplicate memory (similarity > 0.85)
  * Increments frequency and updates timestamp of existing memory
  *
  * @param db - The database instance
@@ -95,7 +96,7 @@ async function handleDuplicate(
 }
 
 /**
- * Handle conflicting memory (similarity > 0.8)
+ * Handle conflicting memory (similarity > 0.7)
  * Uses "newer wins" strategy: prepare new memory for replacement
  *
  * @param db - The database instance
@@ -123,7 +124,7 @@ async function handleConflict(
  * Check if similarity is above minimum relevance threshold
  *
  * @param similarity - The similarity score
- * @returns True if similarity >= 0.7
+ * @returns True if similarity >= 0.5
  */
 export function isRelevant(similarity: number): boolean {
   return similarity >= SIMILARITY_THRESHOLDS.MIN_RELEVANT;

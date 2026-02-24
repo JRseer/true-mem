@@ -25,6 +25,24 @@ import { getAtomicMemories, wrapMemories, type InjectionState } from './injectio
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingMessageEvent: { properties: unknown } | null = null;
 
+// Global extraction debounce to prevent rapid-fire duplicate extractions
+let lastExtractionTime = 0;
+const MIN_EXTRACTION_INTERVAL = 2000; // 2 seconds minimum between extractions
+
+/**
+ * Check if enough time has passed since last extraction
+ * Prevents race conditions when multiple triggers fire in quick succession
+ */
+function canExtract(): boolean {
+  const now = Date.now();
+  if (now - lastExtractionTime < MIN_EXTRACTION_INTERVAL) {
+    log(`Skipping extraction: too soon after last extraction (${now - lastExtractionTime}ms < ${MIN_EXTRACTION_INTERVAL}ms)`);
+    return false;
+  }
+  lastExtractionTime = now;
+  return true;
+}
+
 // Message container type matching SDK response
 interface MessageContainer {
   info: Message;
@@ -298,6 +316,11 @@ async function processSessionIdle(
   // Skip extraction for sub-agent sessions to avoid duplicate extraction
   if (isSubAgentSession(effectiveSessionId)) {
     log(`Skipping extraction: sub-agent session detected (${effectiveSessionId})`);
+    return;
+  }
+
+  // Global debounce: prevent rapid-fire extractions from multiple triggers
+  if (!canExtract()) {
     return;
   }
 

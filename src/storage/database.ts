@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
+import { createHash } from 'crypto';
 import type {
   Session,
   Event,
@@ -40,6 +41,15 @@ function ensureDbDirectory(dbPath: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+}
+
+/**
+ * Generate content hash for exact duplicate detection
+ * Normalizes text by lowercasing and trimming whitespace
+ */
+function generateContentHash(text: string): string {
+  const normalized = text.toLowerCase().trim();
+  return createHash('sha256').update(normalized).digest('hex');
 }
 
 export class MemoryDatabase {
@@ -152,6 +162,7 @@ export class MemoryDatabase {
             summary TEXT NOT NULL,
             source_event_ids TEXT NOT NULL,
             project_scope TEXT,
+            content_hash TEXT,
 
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -188,6 +199,7 @@ export class MemoryDatabase {
           CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_units(session_id);
           CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
           CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
+          CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memory_units(content_hash);
         `);
 
         // Record schema version
@@ -208,7 +220,48 @@ export class MemoryDatabase {
         throw error;
       }
     } else {
-      log('Schema already initialized, skipping');
+      log('Schema already initialized, applying migrations if needed...');
+      this.applyMigrations(currentVersion);
+    }
+  }
+
+  /**
+   * Apply database migrations for schema updates
+   */
+  private applyMigrations(currentVersion: number): void {
+    // Migration to version 2: Add content_hash column for O(1) duplicate detection
+    if (currentVersion < 2) {
+      log('Applying migration v2: Adding content_hash column...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        // Add content_hash column if it doesn't exist
+        const tableInfo = this.db.prepare('PRAGMA table_info(memory_units)').all() as any[];
+        const hasContentHash = tableInfo.some(col => col.name === 'content_hash');
+
+        if (!hasContentHash) {
+          this.db.exec('ALTER TABLE memory_units ADD COLUMN content_hash TEXT');
+          this.db.exec('CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memory_units(content_hash)');
+          log('content_hash column added successfully');
+        }
+
+        // Record migration
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          2,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v2 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v2 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v2', rollbackError);
+        }
+        throw error;
+      }
     }
   }
 
@@ -331,10 +384,27 @@ export class MemoryDatabase {
   ): Promise<MemoryUnit> {
     this.ensureInit();
 
+    // Generate content hash for O(1) exact duplicate detection
+    const contentHash = generateContentHash(summary);
+
     // Begin transaction for reconsolidation and insertion
     this.db.exec('BEGIN TRANSACTION');
 
     try {
+      // Phase 0: Check for exact duplicate by content hash (O(1) lookup)
+      const exactDuplicate = this.db.prepare(
+        `SELECT * FROM memory_units WHERE content_hash = ? AND status = 'active' LIMIT 1`
+      ).get(contentHash) as any;
+
+      if (exactDuplicate) {
+        // Found exact duplicate - increment frequency and return
+        log(`Found exact duplicate by content hash: ${contentHash.substring(0, 8)}...`);
+        this.incrementFrequency(exactDuplicate.id);
+        const updatedMemory = this.getMemory(exactDuplicate.id);
+        this.db.exec('COMMIT');
+        return updatedMemory!;
+      }
+
       // Phase 7: Reconsolidation - Check for similar memories using Jaccard similarity
       const similarMemories = await this.vectorSearch(summary, features.projectScope ?? undefined, 1);
 
@@ -417,11 +487,11 @@ export class MemoryDatabase {
 
       this.db.prepare(`
         INSERT INTO memory_units (
-          id, session_id, store, classification, summary, source_event_ids, project_scope,
+          id, session_id, store, classification, summary, source_event_ids, project_scope, content_hash,
           created_at, updated_at, last_accessed_at,
           recency, frequency, importance, utility, novelty, confidence, interference,
           strength, decay_rate, tags, associations, status, version, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         memory.id,
         memory.sessionId ?? null,
@@ -430,6 +500,7 @@ export class MemoryDatabase {
         memory.summary,
         JSON.stringify(memory.sourceEventIds),
         memory.projectScope ?? null,
+        contentHash,
         memory.createdAt.toISOString(),
         memory.updatedAt.toISOString(),
         memory.lastAccessedAt.toISOString(),
