@@ -156,9 +156,9 @@ By default, explicit intent memories are stored at **project scope** (only visib
 
 | Memory | Scope | Phrase |
 |---------|---------|---------|
-| **Project** | `project_scope = current_project` | "Remember this: we use REST for the API" |
-| **Global** | `project_scope = null` | "Remember this: always run tests before committing" |
-| **Global** | `project_scope = null` | "Ricordati che: uso sempre TypeScript in tutti i progetti" |
+| **Project** | `project_scope = current_project` | "Remember that we use REST for the API" |
+| **Global** | `project_scope = null` | "Remember to _always_ run tests before committing" |
+| **Global** | `project_scope = null` | "Remember that I _always_ use Typescript _in every project_" |
 
 ---
 
