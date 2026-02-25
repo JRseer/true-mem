@@ -20,15 +20,19 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Setup Node.js (for npm publish with OIDC)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Install & Build
         run: |
           bun install
           bun run build
 
       - name: Publish to npm
-        run: bun publish --access public
-        env:
-          NPM_CONFIG_PROVENANCE: true
+        run: npm publish --access public --provenance
 
       - name: Get version
         id: version
