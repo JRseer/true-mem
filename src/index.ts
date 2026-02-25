@@ -11,6 +11,7 @@
 import type { Plugin, Hooks } from '@opencode-ai/plugin';
 import type { PluginInput } from '@opencode-ai/plugin';
 import { log } from './logger.js';
+import pkg from '../package.json' with { type: 'json' };
 
 // Singleton state - shared across all hook calls
 let state: {
@@ -26,7 +27,7 @@ let state: {
 };
 
 const TrueMemory: Plugin = async (ctx) => {
-  console.log('🧠 True-Mem: Plugin loading...');
+  console.log(`True-Mem v${pkg.version}: Plugin loading...`);
   // Store ctx
   state.ctx = ctx;
 
