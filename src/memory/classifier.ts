@@ -7,7 +7,7 @@
  * Layer 4: Role Validation (Human-only for preferences, constraints, decisions, learnings)
  */
 
-import { matchesNegativePattern } from './negative-patterns.js';
+import { matchesNegativePattern, isQuestion, isAIMetaTalk } from './negative-patterns.js';
 import { log } from '../logger.js';
 import type { MessageRole, RoleAwareContext } from '../types.js';
 import { HUMAN_MESSAGE_WEIGHT_MULTIPLIER } from '../types.js';
@@ -55,24 +55,36 @@ export function calculateClassificationScore(text: string, classification: strin
   const keywords = CLASSIFICATION_KEYWORDS[classification];
   if (!keywords) return 0;
 
-  const textLower = text.toLowerCase();
-  const { primary, boosters } = keywords;
+  // Split into sentences for proper isolation
+  const sentences = text.split(/[.!?\n]+/).filter(s => s.trim().length > 0);
 
-  const primaryMatches = primary.filter(k => textLower.includes(k.toLowerCase())).length;
-  const boosterMatches = boosters.filter(k => textLower.includes(k.toLowerCase())).length;
+  let bestSentenceScore = 0;
 
-  // No primary keywords = not this classification
-  if (primaryMatches === 0) return 0;
+  for (const sentence of sentences) {
+    const sentenceLower = sentence.toLowerCase();
+    const { primary, boosters } = keywords;
 
-  // Single primary, no boosters = low confidence (likely false positive)
-  if (primaryMatches === 1 && boosterMatches === 0) return 0.4;
+    const primaryMatches = primary.filter(k => sentenceLower.includes(k.toLowerCase())).length;
+    const boosterMatches = boosters.filter(k => sentenceLower.includes(k.toLowerCase())).length;
 
-  // Calculate score
-  // More primaries and boosters = higher confidence
-  const primaryScore = Math.min(0.5, primaryMatches * 0.2);
-  const boosterScore = Math.min(0.3, boosterMatches * 0.15);
+    // No primary in this sentence = skip
+    if (primaryMatches === 0) continue;
 
-  return Math.min(1, 0.3 + primaryScore + boosterScore);
+    // Calculate score for this sentence
+    const primaryScore = Math.min(0.5, primaryMatches * 0.2);
+    const boosterScore = Math.min(0.3, boosterMatches * 0.15);
+    const sentenceScore = Math.min(1, 0.3 + primaryScore + boosterScore);
+
+    // Keep best sentence score
+    if (sentenceScore > bestSentenceScore) {
+      bestSentenceScore = sentenceScore;
+    }
+  }
+
+  // Single primary, no boosters in ANY sentence = low confidence
+  if (bestSentenceScore === 0.3) return 0.4;
+
+  return bestSentenceScore;
 }
 
 /**
@@ -86,6 +98,15 @@ export function shouldStoreMemory(
   classification: string,
   baseSignalScore: number
 ): { store: boolean; confidence: number; reason: string } {
+  // Layer 0 - Question detection (before negative patterns)
+  if (isQuestion(text)) {
+    return {
+      store: false,
+      confidence: 0,
+      reason: 'is_question_not_statement',
+    };
+  }
+
   // Layer 1: Check negative patterns
   if (matchesNegativePattern(text, classification)) {
     return {

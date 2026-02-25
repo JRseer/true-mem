@@ -57,7 +57,7 @@ What makes True-Mem different from a simple database? It's modeled after how hum
 
 **Dual-Store Architecture (STM/LTM)** - Short-term and long-term memory stores with automatic promotion. High-strength memories get promoted to LTM; weak ones stay in STM or decay.
 
-**Four-Layer Defense System** - Prevents false positives with Negative Pattern filtering (including AI meta-talk detection), Multi-Keyword Scoring, Confidence Thresholds, and Role Validation (only Human messages for user-level preferences).
+**Four-Layer Defense System** - Prevents false positives with Question Detection (filters questions before classification), Negative Pattern filtering (including AI meta-talk detection), Multi-Keyword Scoring with sentence-level isolation, Confidence Thresholds, and Role Validation (only Human messages for user-level preferences).
 
 **Reconsolidation** - When new information conflicts with existing memories, the system detects similarity and handles it intelligently (merge duplicates, keep both complements, or resolve conflicts).
 
@@ -212,6 +212,5 @@ sqlite3 ~/.true-mem/memory.db "SELECT classification, summary, strength FROM mem
 
 ---
 
-**Version**: 1.0.0  
 **License**: MIT  
 **Status**: Production-ready, actively maintained

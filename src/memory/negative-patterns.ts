@@ -39,6 +39,17 @@ export const AI_META_TALK_PATTERNS: RegExp[] = [
   /^Based on (the|my) analysis/i,
   /^After (reviewing|analyzing|examining)/i,
   /^Looking at (the|this)/i,
+
+  // Markdown table / pipe-separated content
+  /^\|[^|]+\|[^|]+\|/i,           // Starts with table row
+  /^[\s]*\|[^\n]+\|[^\n]*$/im,    // Any table row at start
+
+  // Regex-like patterns (technical docs)
+  /^[\s]*\/.*\/[gimsuvy]*\s*$/i,  // Regex pattern lines
+  /\|\w+\|.*\.\.\./i,              // |important|... patterns
+
+  // System-generated content markers
+  /^\|.+\|$/i,                     // Entire line is pipe-wrapped
 ];
 
 /**
@@ -46,6 +57,24 @@ export const AI_META_TALK_PATTERNS: RegExp[] = [
  */
 export function isAIMetaTalk(text: string): boolean {
   return AI_META_TALK_PATTERNS.some(pattern => pattern.test(text.trim()));
+}
+
+/**
+ * Check if text is a question (should NOT be stored as a statement)
+ */
+export function isQuestion(text: string): boolean {
+  const trimmed = text.trim();
+
+  // Ends with question mark
+  if (trimmed.endsWith('?')) return true;
+
+  // Italian question patterns (no question mark in casual writing)
+  const questionPatterns = [
+    /\b(?:cosa|come|quando|dove|perché|chi|quale|quanto)\s+(?:devo|posso|dovrei|potrei|conviene)\b/i,
+    /\b(?:potrò|dovrò|posso|devo)\s+\w+/i,
+  ];
+
+  return questionPatterns.some(p => p.test(trimmed));
 }
 
 // Negative patterns per classification type
@@ -97,6 +126,15 @@ export const NEGATIVE_PATTERNS: Record<string, RegExp[]> = {
     /database\s+constraint/i,
     /foreign\s+key\s+constraint/i,
     /unique\s+constraint/i,
+  ],
+
+  preference: [
+    // List selection patterns - "preferisco 3", "scelgo la 2", "voglio la prima"
+    /\b(preferisco|scelgo|voglio|prendo|opto)\s+(?:la\s+)?[0-9]+(?:a|o)?\b/i,
+    /\b(preferisco|scelgo|voglio|prendo|opto)\s+(?:la\s+)?(prima|seconda|terza|quarta|quinta|primo|secondo|terzo)\b/i,
+    /\b(preferisco|scelgo|voglio|prendo|opto)\s+(?:l'|il\s+)?(?:opzione\s+)?[0-9]+\b/i,
+    /\b(?:option|opzione)\s+[0-9]+\b/i,
+    /\b(preferisco|scelgo|voglio)\s+[0-9]\s*[,.\n]/i,
   ],
 };
 

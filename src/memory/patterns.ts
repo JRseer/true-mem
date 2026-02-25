@@ -513,7 +513,7 @@ export const CLASSIFICATION_PATTERNS = {
   preference: {
     latin: [
       'prefer', 'like', 'want', 'don\'t like', 'hate', 'avoid',
-      'I\'d rather', 'better if', 'always',
+      'I\'d rather', 'better if',
       'preferisco', 'mi piace', 'voglio',
     ],
     nonLatin: [
@@ -529,6 +529,7 @@ export const CLASSIFICATION_PATTERNS = {
     latin: [
       'step', 'workflow', 'process', 'procedure', 'how to', 'the way to',
       'first', 'then', 'finally', 'next',
+      'passo', 'processo', 'procedura', 'specifichiamo', 'definiamo', 'impostiamo',
     ],
     nonLatin: [
       'ステップ', '手順', '方法',
