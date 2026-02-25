@@ -661,6 +661,47 @@ export function classifyByPatterns(text: string): string | null {
 }
 
 // =============================================================================
+// Global Scope Detection
+// =============================================================================
+
+/**
+ * Global scope keywords - indicate memory should apply to all projects
+ * Must appear ANYWHERE in the text (not just after "ricordati")
+ */
+export const GLOBAL_SCOPE_KEYWORDS = {
+  latin: [
+    // English
+    'always', 'everywhere', 'for all projects', 'in every project', 'globally',
+    // Italian
+    'sempre', 'ovunque', 'per tutti i progetti', 'in ogni progetto', 'globalmente',
+    // Spanish
+    'siempre', 'en todas partes', 'para todos los proyectos', 'en todos los proyectos',
+    // French
+    'toujours', 'partout', 'pour tous les projets', 'dans tous les projets',
+    // German
+    'immer', 'uberall', 'fur alle projekte', 'in allen projekten',
+    // Portuguese
+    'sempre', 'em todos os projetos', 'para todos os projetos',
+    // Dutch
+    'altijd', 'overal', 'voor alle projecten',
+    // Turkish
+    'her zaman', 'her yerde', 'tum projelerde',
+    // Polish
+    'zawsze', 'wszedzie', 'dla wszystkich projektow',
+  ],
+};
+
+/**
+ * Check if text contains global scope keywords
+ */
+export function hasGlobalScopeKeyword(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  return GLOBAL_SCOPE_KEYWORDS.latin.some(keyword =>
+    lowerText.includes(keyword.toLowerCase())
+  );
+}
+
+// =============================================================================
 // Classification Helper - Export for use with classifier
 // =============================================================================
 

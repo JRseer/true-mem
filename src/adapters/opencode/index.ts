@@ -15,7 +15,7 @@ import {
   classifyWithRoleAwareness,
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
-import { matchAllPatterns } from '../../memory/patterns.js';
+import { matchAllPatterns, hasGlobalScopeKeyword } from '../../memory/patterns.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
@@ -433,14 +433,13 @@ async function processSessionIdle(
           if (result.store) {
             // Determine scope
             // - User-level classifications: global scope (all projects)
-            // - Explicit intent semantic: also global (user said "remember this")
+            // - Explicit intent WITH global keyword ("sempre", "ovunque", etc.): global scope
+            // - Explicit intent WITHOUT global keyword: project scope
+            // - Everything else: project scope
             const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
-            // Determine scope: User-level (global) vs Project-level (local)
-            // - Explicit intent (confidence >= 0.85) → User-level (user explicitly said "remember this")
-            // - User-level classifications (constraint, preference, learning, procedural) → User-level
-            // - Everything else → Project-level
             const isExplicitIntent = confidence >= 0.85;
-            const isUserLevel = userLevelClassifications.includes(classification) || isExplicitIntent;
+            const hasGlobalKeyword = hasGlobalScopeKeyword(isolatedContent);
+            const isUserLevel = userLevelClassifications.includes(classification) || (isExplicitIntent && hasGlobalKeyword);
             const scope = isUserLevel ? null : state.worktree;
 
             // Determine store: STM vs LTM

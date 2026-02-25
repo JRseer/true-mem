@@ -139,6 +139,27 @@ Use phrases like "Remember this:" or "Remember that ..." to force storage:
 "Remember that I prefer to use TypeScript in my projects"
 ```
 
+**Scope Behavior**:
+
+By default, explicit intent memories are stored at **project scope** (only visible in the current project). To make them **global** (available in all projects), include a global scope keyword anywhere in your phrase:
+
+| Language | Global Scope Keywords |
+|----------|---------------------|
+| **English** | "always", "everywhere", "for all projects", "in every project", "globally" |
+| **Italian** | "sempre", "ovunque", "per tutti i progetti", "in ogni progetto", "globalmente" |
+| **Spanish** | "siempre", "en todas partes", "para todos los proyectos" |
+| **French** | "toujours", "partout", "pour tous les projets" |
+| **German** | "immer", "überall", "für alle projekte" |
+| **Portuguese** | "sempre", "em todos os projetos" |
+
+**Examples**:
+
+| Memory | Scope | Phrase |
+|---------|---------|---------|
+| **Project** | `project_scope = current_project` | "Remember this: we use REST for the API" |
+| **Global** | `project_scope = null` | "Remember this: always run tests before committing" |
+| **Global** | `project_scope = null` | "Ricordati che: uso sempre TypeScript in tutti i progetti" |
+
 ---
 
 ## Architecture
