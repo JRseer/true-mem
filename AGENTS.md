@@ -15,7 +15,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 25/02/2026 - v1.0.2 - Memory verb grammar fixes
+**Aggiornamento**: 25/02/2026 - v1.0.3 - GitHub Actions release automation
 
 ### Stato Implementazione
 
@@ -24,7 +24,8 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Build (bun) | OK - 99.94 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.0.1 |
+| npm | Pubblicato 1.0.3 |
+| GitHub Actions | Configurato - release.yml |
 
 ### Bug Risolti
 
@@ -135,6 +136,49 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 - Commit solo locale (push su richiesta)
 - npm publish solo con permesso esplicito
 - Versione letta dinamicamente da package.json nel log startup
+
+---
+
+## Release Workflow (GitHub Actions)
+
+**Automazione**: Push su main con versione nuova → npm publish + GitHub Release automatici
+
+### File
+`.github/workflows/release.yml`
+
+### Daily Workflow
+
+```bash
+# 1. Modifica codice
+# 2. Commit
+git add . && git commit -m "fix: descrizione"
+
+# 3. Bump versione
+npm version patch   # o minor / major
+
+# 4. Push
+git push origin main
+
+# 5. GitHub Action fa tutto:
+#    → Pubblica su npm
+#    → Crea GitHub Release con tag v1.0.x
+```
+
+### Come verificare successo
+
+| Dove | Cosa controllare |
+|------|------------------|
+| **GitHub Actions** | https://github.com/rizal72/true-mem/actions → verde = OK |
+| **npm** | https://www.npmjs.com/package/true-mem → versione aggiornata |
+| **GitHub Releases** | https://github.com/rizal72/true-mem/releases → nuova release |
+| **Notifiche GitHub** | Email/Notifiche se watch abilitato |
+
+### Trusted Publishing (OIDC)
+
+Configurato su npmjs.com:
+- Owner: `rizal72`
+- Repository: `true-mem`
+- Workflow: `release.yml`
 
 ---
 
