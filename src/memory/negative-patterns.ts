@@ -77,6 +77,103 @@ export function isQuestion(text: string): boolean {
   return questionPatterns.some(p => p.test(trimmed));
 }
 
+/**
+ * First Person Recall Patterns
+ *
+ * These patterns detect when the user is recounting/recalling something
+ * (1st person indicative) rather than requesting storage (imperative).
+ *
+ * "I remember when..." = recounting, NOT storage request
+ * "Remember this!" = imperative, storage request
+ */
+export const FIRST_PERSON_RECALL_PATTERNS: RegExp[] = [
+  // English - 1st person indicative
+  /\bI\s+(remember|recall|recollect|don'?t\s+forget)\b/i,
+  /\bwe\s+(remember|recall|recollect)\b/i,
+  /\bI\s+can\s+remember\b/i,
+
+  // Italian - 1st person singular "io ricordo"
+  /\b(io\s+)?ricordo\b/i,
+  /\bmi\s+ricordo\b/i,
+  /\bho\s+ricordato\b/i,
+
+  // Italian - 1st person plural with indicative context
+  /\b(ci\s+)?ricordiamo\s+(che|di|quando|come|perch)\b/i,
+
+  // Spanish - 1st person "yo recuerdo"
+  /\b(yo\s+)?recuerdo\b/i,
+  /\bme\s+acuerdo\b/i,
+  /\brecordamos\b/i,
+
+  // French - 1st person "je me souviens"
+  /\bje\s+(me\s+)?souviens\b/i,
+  /\bnous\s+(nous\s+)?souvenons\b/i,
+
+  // German - 1st person "ich erinnere mich"
+  /\bich\s+erinnere(\s+mich)?\b/i,
+  /\bwir\s+erinnern(\s+uns)?\b/i,
+
+  // Portuguese - 1st person "eu me lembro"
+  /\b(eu\s+)?(me\s+)?lembro\b/i,
+  /\bnos\s+lembramos\b/i,
+
+  // Dutch - 1st person "ik herinner me"
+  /\bik\s+herinner(\s+me)?\b/i,
+  /\bwe\s+herinneren(\s+ons)?\b/i,
+
+  // Polish - 1st person "pamiętam"
+  /\bpamiętam\b/i,
+  /\bpamiętamy\b/i,
+
+  // Turkish - 1st person "hatırlıyorum"
+  /\bhatırlıyorum\b/i,
+  /\bhatırlıyoruz\b/i,
+];
+
+/**
+ * Remind Recall Patterns
+ *
+ * These patterns detect when "remind me" is used to request INFORMATION
+ * (recall) rather than to store something (imperative).
+ *
+ * "Remind me how we did this" = asking AI to recall → DON'T store
+ * "Remind me to commit" = imperative to store → STORE
+ *
+ * Key distinction: question word vs. preposition/demonstrative after "remind me"
+ */
+export const REMIND_RECALL_PATTERNS: RegExp[] = [
+  // English: remind me [question word]
+  /\bremind\s+me\s+(how|what|when|where|why|who|which)\b/i,
+  /\bremind\s+me\s+of\s+(the|what|how|when|where|why)\b/i,
+
+  // Italian: ricordami [question word]
+  /\bricordami\s+(come|cosa|quando|dove|perch[eé]|chi|quale|quanto)\b/i,
+  /\bricordami\s+che\s+(cosa|tipo|ragione)\b/i,
+
+  // Spanish: recuérdame [question word]
+  /\brec[uú]rdame\s+(c[oó]mo|qu[eé]|cu[aá]ndo|d[oó]nde|por\s*qu[eé]|qui[eé]n|cu[aá]l)\b/i,
+
+  // French: rappelle-moi [question word]
+  /\brappelle[s]?\s*-?\s*moi\s+(comment|quand|o[uù]|pourquoi|qui|quel)\b/i,
+  /\brappelle[s]?\s*-?\s*moi\s+ce\s+que\b/i,
+
+  // German: erinner mich [question word]
+  /\berinner\s+(mich|uns)\s+(wie|was|wann|wo|warum|wer|welche[ns]?)\b/i,
+
+  // Portuguese: lembre-me [question word]
+  /\blembre\s*-?\s*me\s+(como|quando|onde|por\s*que|quem|qual)\b/i,
+  /\blembre\s*-?\s*me\s+o\s+que\b/i,
+
+  // Dutch: herinner me [question word]
+  /\bherinner\s+(me|ons)\s+(hoe|wat|wanneer|waar|waarom|wie|welke)\b/i,
+
+  // Polish: przypomnij mi [question word]
+  /\bprzypomnij\s+mi\s+(jak|co|kiedy|gdzie|dlaczego|kto|kt[oó]ry)\b/i,
+
+  // Turkish: hatırlat bana [question word]
+  /\bhat[ıi]rlat\s+(bana)\s+(nas[ıi]l|ne|ne\s+zaman|nere[dy]e|neden|kim|hangi)\b/i,
+];
+
 // Negative patterns per classification type
 export const NEGATIVE_PATTERNS: Record<string, RegExp[]> = {
   bugfix: [
@@ -148,6 +245,16 @@ export function matchesNegativePattern(text: string, classification: string): bo
     return true;
   }
 
+  // Check for 1st person recall patterns (recounting, not storage request)
+  if (FIRST_PERSON_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
+  // Check for "remind me [question word]" patterns (recall request, not storage)
+  if (REMIND_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
   const patterns = NEGATIVE_PATTERNS[classification];
   if (!patterns) return false;
 
@@ -163,6 +270,16 @@ export function getMatchingNegativePatterns(text: string, classification: string
   // Check AI meta-talk first
   if (isAIMetaTalk(text)) {
     matches.push('[AI_META_TALK]');
+  }
+
+  // Check 1st person recall patterns
+  if (FIRST_PERSON_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
+    matches.push('[FIRST_PERSON_RECALL]');
+  }
+
+  // Check "remind me [question word]" patterns
+  if (REMIND_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
+    matches.push('[REMIND_RECALL]');
   }
 
   const patterns = NEGATIVE_PATTERNS[classification];

@@ -15,13 +15,13 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 25/02/2026 - v1.0.2 - Preference Classification fix
+**Aggiornamento**: 25/02/2026 - v1.0.2 - Memory verb grammar fixes
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 97.98 KB |
+| Build (bun) | OK - 99.94 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
 | npm | Pubblicato 1.0.1 |
@@ -35,6 +35,8 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Duplicate memories | content_hash + global debounce 2s |
 | AI meta-talk | Pattern filtering (pipes, markdown tables) |
 | Preference false positives | Question detection + list selection + sentence-level scoring |
+| 1st person recall | FIRST_PERSON_RECALL_PATTERNS (10 lingue) |
+| "Ricordami" ambiguity | REMIND_RECALL_PATTERNS (10 lingue) |
 | Global scope retrieval | Query SQL allineata |
 | Query consistency | vectorSearch = getMemoriesByScope |
 
@@ -89,7 +91,7 @@ src/
 ## Four-Layer Defense (False Positive Prevention)
 
 1. **Question Detection** - Filtra domande (finiscono con ?)
-2. **Negative Patterns** - Filtra AI meta-talk, list selection
+2. **Negative Patterns** - AI meta-talk, list selection, 1st person recall, remind recall (10 lingue)
 3. **Multi-Keyword + Sentence-Level** - Richiede 2+ segnali nella stessa frase
 4. **Confidence Threshold** - Salva solo se score >= 0.6
 

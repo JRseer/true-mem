@@ -210,8 +210,6 @@ export function classifyWithExplicitIntent(
     /\bmemorizziamo\b:?\s*/gi,
     /\bricordiamoci che\b:?\s*/gi,
     /\bricordiamoci di\b:?\s*/gi,
-    /\bricorda\b:?\s*/gi,
-    /\bremember\b:?\s*/gi,
     /\btieni a mente\b:?\s*/gi,
     /\bkeep in mind\b:?\s*/gi,
     /\bnota che\b:?\s*/gi,
