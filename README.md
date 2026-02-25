@@ -7,17 +7,13 @@
 ## Table of Contents
 
 - [Overview](#overview)
-- [The Problem](#the-problem)
-- [The Solution](#the-solution)
-- [The Psychology Behind It](#the-psychology-behind-it)
 - [Key Features](#key-features)
+- [Noise Filtering](#noise-filtering)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Architecture](#architecture)
 - [Memory Classifications](#memory-classifications)
 - [Technical Details](#technical-details)
-- [Inspiration](#inspiration)
-- [Debug](#debug)
 
 ---
 
@@ -78,6 +74,33 @@ What makes True-Mem different from a simple database? It's modeled after how hum
 
 ---
 
+## Noise Filtering
+
+What truly sets True-Mem apart is its ability to distinguish **signal from noise**. Unlike simpler memory plugins that store everything matching a keyword, True-Mem understands context and intent:
+
+**What gets filtered OUT:**
+
+| Pattern Type | Example | Why filtered |
+|--------------|---------|--------------|
+| Questions | "Do you remember this?" | It's a question, not a statement |
+| 1st person recall | "I remember when we fixed that" | Recounting, not requesting storage |
+| Remind-me recall | "Remind me how we did this" | Asking AI to recall info, not store |
+| AI meta-talk | "Goal: The user is trying to..." | AI-generated, not user content |
+| List selections | "I prefer option 3" | Context-specific choice, not general preference |
+
+**What gets stored:**
+
+| Pattern Type | Example | Why stored |
+|--------------|---------|------------|
+| Imperatives | "Remember this: always run tests" | Explicit storage request |
+| Preferences | "I prefer TypeScript over JavaScript" | General, reusable preference |
+| Decisions | "We decided to use SQLite" | Project-level decision |
+| Constraints | "Never use var keyword" | Permanent rule |
+
+All filtering patterns support **10 languages**: English, Italian, Spanish, French, German, Portuguese, Dutch, Polish, Turkish, and Russian.
+
+---
+
 ## Installation
 
 Add to your `~/.config/opencode/opencode.jsonc`:
@@ -109,11 +132,11 @@ Just have conversations with OpenCode. True-Mem extracts relevant info in the ba
 
 ### Explicit Memory Storage
 
-Use phrases like "Remember this:" or "Ricorda questo:" to force storage:
+Use phrases like "Remember this:" or "Remember that ..." to force storage:
 
 ```
-"Ricorda questo: preferisco sempre usare TypeScript per i miei progetti"
 "Remember this: never commit without running tests first"
+"Remember that I prefer to use TypeScript in my projects"
 ```
 
 ---
@@ -180,10 +203,10 @@ true-mem/
 
 | Layer | Purpose |
 |-------|---------|
-| 1. Negative Patterns | Filter known false positives |
-| 2. Multi-Keyword Scoring | Require 2+ signals |
-| 3. Confidence Threshold | Store only if score >= 0.6 |
-| 4. Role Validation | Human-only for user-level memories |
+| 1. Question Detection | Filter questions before classification |
+| 2. Negative Patterns | AI meta-talk, list selections, 1st person recall, remind-me recall (10 languages) |
+| 3. Multi-Keyword + Sentence-Level | Require 2+ signals in the same sentence |
+| 4. Confidence Threshold | Store only if score >= 0.6 |
 
 ### Decay Strategy
 
