@@ -15,16 +15,16 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 26/02/2026 - v1.0.12 - Architecture Review + Bug Fixes
+**Aggiornamento**: 26/02/2026 - v1.0.14 - Scope Logic Fix
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 106.83 KB |
+| Build (bun) | OK - 106.64 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Non pubblicato (commit local) |
+| npm | Pubblicato 1.0.13 (1.0.14 in arrivo) |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 
@@ -56,14 +56,16 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | injectedSessions leak | Filter active sessions + reset |
 | worktree fallback | Fallback a "/" invece di undefined |
 | singleton state sync | Refactor per sincronizzare stato |
+| markerPatterns ignorato | Check markerPatterns PRIMA del signal check |
+| Global keyword in marker | `hasGlobalScopeKeyword(text)` invece di `isolatedContent` |
 
 ---
 
 ## Architecture Review (v1.0.12)
 
-### Risolti (9/13)
+### Risolti (13/13)
 
-**Oracle review** ha identificato 13 problemi. Risolti 9 (CRITICAL, HIGH, P1, P2):
+**Oracle review** ha identificato 13 problemi. Risolti tutti (CRITICAL, HIGH, P1, P2):
 
 | Priority | Issue | Fix |
 |----------|-------|-----|
@@ -73,18 +75,30 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | **P1** | Nessun flag per successo estrazione | `extractionSucceeded` check prima di update |
 | **P2** | `getMemory()` null assertion | Try-catch + return null |
 | **P2** | `vectorSearch()` inconsistency | Empty query → return [] |
-| **P2** | injectedSessions memory leak | Filter active sessions + periodic reset |
-| **P2** | worktree undefined → crash | Fallback a "/" se session.worktree missing |
+| **P2** | injectedSessions memory leak | Rimosso legacy code |
+| **P2** | worktree undefined → crash | Fallback a `unknown-project-*` |
 | **P2** | Singleton state sync | Refactor `initialize()` per return instance |
+| **P3** | extractionQueue lifecycle | Aggiunto `resetExtractionQueue()` |
+| **P4** | Versione hardcoded | `getVersion()` dinamico |
+| **P5** | Legacy code cleanup | Rimosso `injectedSessions` |
+| **P6** | markerPatterns ignorato | Check PRIMA del signal check |
 
-### Rimanenti (4/13)
+### Rimanenti (0/13)
 
-| Priority | Issue | Note |
-|----------|-------|------|
-| P3 | extractionQueue lifecycle cleanup | Da implementare |
-| P4 | Debug logging strategy | Da implementare |
-| P5 | Performance monitoring | Da implementare |
-| P6 | Retry mechanism | Low priority |
+Tutti i problemi identificati da Oracle sono stati risolti.
+
+---
+
+## Scope Logic Fix (v1.0.14)
+
+### Bug Risolti
+
+| Bug | Soluzione |
+|-----|-----------|
+| markerPatterns ignorato | Check markerPatterns PRIMA del signal check in `classifyWithExplicitIntent()` |
+| Global keyword in marker | `hasGlobalScopeKeyword(text)` controlla testo completo, non solo `isolatedContent` |
+
+**Caso d'uso risolto:** "ricordati per sempre che X" → ora correttamente GLOBAL scope
 
 ---
 
