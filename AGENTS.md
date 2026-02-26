@@ -81,6 +81,25 @@ src/
 
 ---
 
+## Estrazione Memorie
+
+**Trigger**: `session.idle` (quando l'utente smette di scrivere)
+
+**Delays**:
+1. **2 secondi** debounce globale tra estrazioni
+2. **queueMicrotask()** per non bloccare UI
+
+**Flusso**:
+1. Utente invia messaggio → session diventa idle
+2. Evento `session.idle` → job aggiunto alla queue
+3. Check `canExtract()` → verifica 2s dall'ultima estrazione
+4. Fetch nuovi messaggi dal watermark
+5. Estrazione → salvataggio nel DB
+
+**Schema DB**: colonna scope è `project_scope` (non `scope`)
+
+---
+
 ## Classificazioni Memorie
 
 | Tipo | Decay | Scope | Esempio |
