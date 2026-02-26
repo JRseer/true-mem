@@ -14,6 +14,8 @@
 - [Architecture](#architecture)
 - [Memory Classifications](#memory-classifications)
 - [Technical Details](#technical-details)
+- [Contributing](#contributing)
+- [Debug](#debug)
 
 ---
 
@@ -248,6 +250,36 @@ true-mem/
 ## Inspiration
 
 This project was inspired by [PsychMem](https://github.com/muratg98/psychmem) - a pioneering plugin for persistent memory in OpenCode. True-Mem builds on those ideas with a focus on cognitive psychology models and production stability.
+
+---
+
+## Contributing
+
+Want to contribute or test your own changes? Here's how:
+
+1. **Fork this repository**
+
+2. **Build the plugin**
+   ```bash
+   cd true-mem
+   bun install
+   bun run build
+   ```
+
+3. **Use your local version** in `~/.config/opencode/opencode.jsonc`:
+   ```jsonc
+   {
+     "plugin": [
+       "file:///path/to/your/fork/true-mem"
+     ]
+   }
+   ```
+
+4. **Restart OpenCode** - it will load your local build instead of the npm version.
+
+5. **Make your changes**, rebuild with `bun run build`, and test.
+
+6. **Submit a PR** when ready!
 
 ---
 
