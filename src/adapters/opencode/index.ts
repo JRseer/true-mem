@@ -39,7 +39,6 @@ function canExtract(): boolean {
     log(`Skipping extraction: too soon after last extraction (${now - lastExtractionTime}ms < ${MIN_EXTRACTION_INTERVAL}ms)`);
     return false;
   }
-  lastExtractionTime = now;
   return true;
 }
 
@@ -484,6 +483,8 @@ async function processSessionIdle(
   // Only update watermark if extraction was attempted and succeeded, or if no extraction was needed
   if (!extractionAttempted || extractionSucceeded) {
     state.db.updateMessageWatermark(effectiveSessionId, messages.length);
+    // Update last extraction time only when extraction was actually executed or there was nothing to extract
+    lastExtractionTime = Date.now();
   }
 }
 
