@@ -15,7 +15,8 @@ import {
   classifyWithRoleAwareness,
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
-import { matchAllPatterns, hasGlobalScopeKeyword } from '../../memory/patterns.js';
+import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest } from '../../memory/patterns.js';
+import { setLastInjectedMemories, getLastInjectedMemories } from '../../index.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
@@ -175,6 +176,41 @@ export async function createTrueMemoryPlugin(
       }
     },
 
+    "chat.message": async (input, output) => {
+      // Extract user text from parts
+      const textParts: string[] = [];
+      for (const part of output.parts) {
+        if (part.type === 'text' && 'text' in part) {
+          textParts.push((part as { text: string }).text);
+        }
+      }
+      const userText = textParts.join(' ');
+
+      if (!userText) return;
+
+      // Check if this is a memory list request
+      if (isMemoryListRequest(userText)) {
+        const memories = getLastInjectedMemories();
+
+        if (memories.length > 0) {
+          const memoryList = formatMemoryListForResponse(memories);
+
+          // Inject as a new part in the message
+          output.parts.push({
+            type: 'text',
+            text: `\n\n[TRUE-MEM] Ecco le memorie iniettate in questo prompt:\n${memoryList}`,
+          } as Part);
+
+          log(`Memory list request detected: injected ${memories.length} memories`);
+        } else {
+          output.parts.push({
+            type: 'text',
+            text: '\n\n[TRUE-MEM] Nessuna memoria iniettata in questo prompt.',
+          } as Part);
+        }
+      }
+    },
+
     'tool.execute.before': async (input, output) => {
       const toolInput = input as { tool: string; sessionID: string; callID: string };
       const toolName = toolInput.tool;
@@ -238,6 +274,9 @@ export async function createTrueMemoryPlugin(
 
         // Retrieve ALL relevant memories for current project (both user-level and project-level)
         const allMemories = injectionState.db.getMemoriesByScope(state.worktree, 20);
+
+        // Save to global state for "list memories" feature
+        setLastInjectedMemories(allMemories);
 
         if (allMemories.length > 0) {
           const wrappedContext = wrapMemories(allMemories, state.worktree, 'global');
@@ -877,6 +916,34 @@ You are compacting a conversation. Preserve:
 Write a structured summary: task, accomplishments, remaining work, critical context.`);
   
   return sections.join('\n\n');
+}
+
+/**
+ * Format memories for response to user
+ */
+function formatMemoryListForResponse(memories: MemoryUnit[]): string {
+  const lines: string[] = [];
+
+  // Separate by store
+  const ltm = memories.filter(m => m.store === 'ltm');
+  const stm = memories.filter(m => m.store === 'stm');
+
+  if (ltm.length > 0) {
+    lines.push('**Memorie permanenti (LTM):**');
+    for (const mem of ltm) {
+      lines.push(`• [${mem.classification}] ${mem.summary}`);
+    }
+    lines.push('');
+  }
+
+  if (stm.length > 0) {
+    lines.push('**Memorie temporanee (STM):**');
+    for (const mem of stm) {
+      lines.push(`• [${mem.classification}] ${mem.summary}`);
+    }
+  }
+
+  return lines.join('\n');
 }
 
 export default createTrueMemoryPlugin;

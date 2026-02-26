@@ -24,7 +24,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Build (bun) | OK - 106.64 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.0.13 (1.0.14 in arrivo) |
+| npm | Pubblicato 1.0.14 |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 
