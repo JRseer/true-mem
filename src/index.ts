@@ -32,18 +32,6 @@ let state: {
 // Track if toast shown (per process, not per session)
 let hasShownToast = false;
 
-// Track last injected memories for "list memories" feature
-let lastInjectedMemories: import('./types.js').MemoryUnit[] = [];
-
-// Export for use in adapter
-export function setLastInjectedMemories(memories: import('./types.js').MemoryUnit[]): void {
-  lastInjectedMemories = memories;
-}
-
-export function getLastInjectedMemories(): import('./types.js').MemoryUnit[] {
-  return lastInjectedMemories;
-}
-
 const TrueMemory: Plugin = async (ctx) => {
   // Store ctx
   state.ctx = ctx;

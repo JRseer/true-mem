@@ -16,7 +16,7 @@ import {
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
 import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest } from '../../memory/patterns.js';
-import { setLastInjectedMemories, getLastInjectedMemories } from '../../index.js';
+import { setLastInjectedMemories, getLastInjectedMemories } from '../../state.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
