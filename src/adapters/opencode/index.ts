@@ -438,11 +438,12 @@ async function processSessionIdle(
             // Determine scope
             // - User-level classifications: global scope (all projects)
             // - Explicit intent WITH global keyword ("sempre", "ovunque", etc.): global scope
+            //   NOTE: Check full text, not isolatedContent, because keywords can be in the marker
             // - Explicit intent WITHOUT global keyword: project scope
             // - Everything else: project scope
             const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
             const isExplicitIntent = confidence >= 0.85;
-            const hasGlobalKeyword = hasGlobalScopeKeyword(isolatedContent);
+            const hasGlobalKeyword = hasGlobalScopeKeyword(text);
             const isUserLevel = userLevelClassifications.includes(classification) || (isExplicitIntent && hasGlobalKeyword);
             const scope = isUserLevel ? null : state.worktree;
 
