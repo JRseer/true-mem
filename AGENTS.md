@@ -15,16 +15,16 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 26/02/2026 - v1.0.11 - MarkerPatterns flessibili
+**Aggiornamento**: 26/02/2026 - v1.0.12 - Architecture Review + Bug Fixes
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 105.76 KB |
+| Build (bun) | OK - 106.83 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.0.11 |
+| npm | Non pubblicato (commit local) |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 
@@ -47,6 +47,44 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Versione "unknown" | findPackageJsonUp() come OMO-slim |
 | "ricordati sempre che" non matchava | markerPatterns con `(?:\s+\w+){0,5}?` |
 | Negazioni memorizzate | NEGATION_PATTERNS (10 lingue) |
+| lastExtractionTime race condition | Update solo quando extraction avviene |
+| DB transaction async issue | vectorSearch fuori transazione |
+| Watermark loop infinito | messagesProcessed logic |
+| extractionSucceeded flag | Flag per trackare successo estrazione |
+| getMemory null assertion | Null check + try-catch |
+| vectorSearch consistency | Empty query skip con return [] |
+| injectedSessions leak | Filter active sessions + reset |
+| worktree fallback | Fallback a "/" invece di undefined |
+| singleton state sync | Refactor per sincronizzare stato |
+
+---
+
+## Architecture Review (v1.0.12)
+
+### Risolti (9/13)
+
+**Oracle review** ha identificato 13 problemi. Risolti 9 (CRITICAL, HIGH, P1, P2):
+
+| Priority | Issue | Fix |
+|----------|-------|-----|
+| **P0** | lastExtractionTime aggiornato in `canExtract()` | Spostato a fine `runExtraction()` |
+| **P0** | DB transaction + async | `vectorSearch()` chiamata fuori transazione |
+| **P1** | Watermark loop infinito | Logica `messagesProcessed` per skip messaggi già processati |
+| **P1** | Nessun flag per successo estrazione | `extractionSucceeded` check prima di update |
+| **P2** | `getMemory()` null assertion | Try-catch + return null |
+| **P2** | `vectorSearch()` inconsistency | Empty query → return [] |
+| **P2** | injectedSessions memory leak | Filter active sessions + periodic reset |
+| **P2** | worktree undefined → crash | Fallback a "/" se session.worktree missing |
+| **P2** | Singleton state sync | Refactor `initialize()` per return instance |
+
+### Rimanenti (4/13)
+
+| Priority | Issue | Note |
+|----------|-------|------|
+| P3 | extractionQueue lifecycle cleanup | Da implementare |
+| P4 | Debug logging strategy | Da implementare |
+| P5 | Performance monitoring | Da implementare |
+| P6 | Retry mechanism | Low priority |
 
 ---
 

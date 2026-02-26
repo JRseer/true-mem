@@ -90,3 +90,11 @@ export function getExtractionQueue(): ExtractionQueue {
   }
   return queueInstance;
 }
+
+/**
+ * Reset the extraction queue singleton (for testing/cleanup)
+ */
+export function resetExtractionQueue(): void {
+  queueInstance = null;
+  log('ExtractionQueue: Singleton instance reset');
+}

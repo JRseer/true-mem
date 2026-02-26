@@ -20,6 +20,7 @@ import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
 import { getAtomicMemories, wrapMemories, type InjectionState } from './injection.js';
+import { getVersion } from '../../utils/version.js';
 
 // Debounce state for message.updated events
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,7 +92,6 @@ interface TrueMemoryAdapterState {
   db: MemoryDatabase;
   config: PsychMemConfig;
   currentSessionId: string | null;
-  injectedSessions: Set<string>;
   worktree: string;
   client: PluginInput['client'];
 }
@@ -131,7 +131,6 @@ export async function createTrueMemoryPlugin(
     db,
     config,
     currentSessionId: null,
-    injectedSessions: new Set<string>(),
     worktree,
     client: ctx.client,
   };
@@ -140,7 +139,8 @@ export async function createTrueMemoryPlugin(
 
   // Extract project name and create professional startup message
   const projectName = worktree.split(/[/\\]/).pop() || 'Unknown';
-  const startupMessage = `🧠 True-Mem: Plugin loaded successfully | v2.0.1 [${BUILD_TIME}] | Mode: Jaccard Similarity | Project: ${projectName}`;
+  const version = getVersion();
+  const startupMessage = `🧠 True-Mem: Plugin loaded successfully | v${version} [${BUILD_TIME}] | Mode: Jaccard Similarity | Project: ${projectName}`;
 
   // Log to file-based logger only (to avoid overwriting OpenCode TUI during lazy initialization)
   log(startupMessage);
@@ -328,9 +328,6 @@ async function processSessionIdle(
     return;
   }
 
-  // Update last extraction time NOW to prevent race conditions
-  lastExtractionTime = Date.now();
-
   const watermark = state.db.getMessageWatermark(effectiveSessionId);
 
   let messages: MessageContainer[];
@@ -484,13 +481,17 @@ async function processSessionIdle(
       // extractionSucceeded flag removed - now tracking messagesProcessed
     } catch (error) {
       log(`Extraction failed with critical error: ${error}`);
-      // Don't update watermark if extraction failed with critical error
+      // Update watermark even on error to prevent re-processing same messages
+      state.db.updateMessageWatermark(effectiveSessionId, messages.length);
       return;
     }
   }
 
   // ALWAYS update watermark to prevent infinite loop
   state.db.updateMessageWatermark(effectiveSessionId, messages.length);
+
+  // Update lastExtractionTime AFTER successful extraction (not before)
+  lastExtractionTime = Date.now();
 }
 
 async function handleSessionEnd(
@@ -511,9 +512,6 @@ async function handleSessionEnd(
   } catch (err) {
     log(`Maintenance error: ${err}`);
   }
-
-  // P2-2: Clean up injectedSessions to prevent memory leak in long-running processes
-  state.injectedSessions.delete(effectiveSessionId);
 
   const reason = eventType === 'session.error' ? 'abandoned' : 'normal';
   state.db.endSession(effectiveSessionId, reason === 'abandoned' ? 'abandoned' : 'completed');
