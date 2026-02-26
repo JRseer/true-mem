@@ -94,6 +94,10 @@ const TrueMemory: Plugin = async (ctx) => {
   log('True-Mem: Plugin registered (immediate init mode)');
 
   return {
+    config: async (input) => {
+      // No-op - config hook required by OpenCode but not used
+    },
+
     event: async ({ event }) => {
       // Skip noisy events synchronously
       const silentEvents = new Set(['message.part.delta', 'message.part.updated', 'session.diff']);
