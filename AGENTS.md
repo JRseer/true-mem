@@ -15,17 +15,18 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 25/02/2026 - v1.0.3 - GitHub Actions release automation
+**Aggiornamento**: 26/02/2026 - v1.0.10 - Toast + npm auth fix
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 99.94 KB |
+| Build (bun) | OK - 101.36 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.0.3 |
-| GitHub Actions | Configurato - release.yml |
+| npm | Pubblicato 1.0.10 |
+| GitHub Actions | OK - NPM_TOKEN secret |
+| Toast | OK - Tutte le sessioni |
 
 ### Bug Risolti
 
@@ -40,6 +41,9 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | "Ricordami" ambiguity | REMIND_RECALL_PATTERNS (10 lingue) |
 | Global scope retrieval | Query SQL allineata |
 | Query consistency | vectorSearch = getMemoriesByScope |
+| npm OIDC auth fallita | NPM_TOKEN come GitHub Secret |
+| Toast solo nuove sessioni | Toast nel corpo plugin (tutte le sessioni) |
+| Versione "unknown" | findPackageJsonUp() come OMO-slim |
 
 ---
 
@@ -135,7 +139,7 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 
 - Commit solo locale (push su richiesta)
 - npm publish solo con permesso esplicito
-- Versione letta dinamicamente da package.json nel log startup
+- Versione letta con `findPackageJsonUp()` (come OMO-slim)
 
 ---
 
@@ -173,12 +177,25 @@ git push origin main
 | **GitHub Releases** | https://github.com/rizal72/true-mem/releases → nuova release |
 | **Notifiche GitHub** | Email/Notifiche se watch abilitato |
 
-### Trusted Publishing (OIDC)
+### Autenticazione npm
 
-Configurato su npmjs.com:
-- Owner: `rizal72`
-- Repository: `true-mem`
-- Workflow: `release.yml`
+**NPM_TOKEN come GitHub Secret** (non OIDC - non funziona):
+1. Genera automation token su npmjs.com
+2. Aggiungi come secret: `Settings → Secrets → Actions → NPM_TOKEN`
+3. Il workflow usa `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`
+
+---
+
+## Toast Notification
+
+Il toast appare **a tutte le sessioni** (nuove e continuate), 2s dopo l'avvio di OpenCode.
+
+**Implementazione** (`src/index.ts`):
+- Toast nel corpo del plugin (non su `session.created`)
+- Delay 2s per far stabilizzare UI
+- Versione letta con `findPackageJsonUp()` (come OMO-slim)
+
+**Nota**: OpenCode TUI supporta solo UN toast alla volta (l'ultimo sovrascrive).
 
 ---
 
