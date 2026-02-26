@@ -179,7 +179,7 @@ export function inferClassification(text: string): string | null {
 
 /**
  * Classify content with explicit intent detection.
- * If explicit_remember signal is present, isolate the sentence and classify it.
+ * If explicit_remember signal is present OR marker pattern matches, isolate the sentence and classify it.
  */
 export function classifyWithExplicitIntent(
   text: string,
@@ -187,17 +187,6 @@ export function classifyWithExplicitIntent(
 ): { classification: string | null; confidence: number; isolatedContent: string } {
   // Check if explicit_remember signal is present
   const hasExplicitRemember = signals.some(s => s.type === 'explicit_remember');
-
-  if (hasExplicitRemember) {
-    log('Debug: Explicit intent signal found, isolating sentence...');
-  }
-
-  if (!hasExplicitRemember) {
-    // Fall back to normal classification
-    const classification = inferClassification(text);
-    const confidence = classification ? calculateClassificationScore(text, classification) : 0;
-    return { classification, confidence, isolatedContent: text };
-  }
 
   // Extract explicit remember marker patterns
   // Pattern structure: IMPERATIVO [0-5 parole opzionali] CONNETTORE
@@ -227,6 +216,7 @@ export function classifyWithExplicitIntent(
   ];
 
   // Find the FIRST occurrence of any explicit remember marker in the entire text
+  // This check happens BEFORE the signal check to catch patterns like "ricordati per sempre che"
   let isolatedContent = '';
   let firstMatch: { index: number; match: RegExpExecArray } | null = null;
 
@@ -246,12 +236,19 @@ export function classifyWithExplicitIntent(
     log('Debug: Extracted content after first explicit marker:', isolatedContent);
   }
 
-  // If no marker found, fall back to normal classification
-  if (!isolatedContent) {
-    log('Debug: No explicit marker found, falling back to normal classification');
+  // If no marker found AND no explicit_remember signal, fall back to normal classification
+  if (!isolatedContent && !hasExplicitRemember) {
+    log('Debug: No explicit marker or signal found, falling back to normal classification');
     const classification = inferClassification(text);
     const confidence = classification ? calculateClassificationScore(text, classification) : 0;
     return { classification, confidence, isolatedContent: text };
+  }
+
+  // If we have a marker match, proceed with explicit intent classification
+  if (!isolatedContent) {
+    // Has explicit_remember signal but no marker pattern match
+    // Use full text as isolated content
+    isolatedContent = text;
   }
 
   log('Debug: Isolated content for classification:', isolatedContent);
