@@ -323,6 +323,9 @@ async function processSessionIdle(
     return;
   }
 
+  // Update last extraction time NOW to prevent race conditions
+  lastExtractionTime = Date.now();
+
   const watermark = state.db.getMessageWatermark(effectiveSessionId);
 
   let messages: MessageContainer[];
@@ -380,7 +383,7 @@ async function processSessionIdle(
   log('Debug: Detected signals:', JSON.stringify(signals));
 
   let extractionAttempted = false;
-  let extractionSucceeded = false;
+  let messagesProcessed = 0; // Track successfully processed messages
 
   if (signals.length > 0) {
     extractionAttempted = true;
@@ -464,6 +467,7 @@ async function processSessionIdle(
             );
 
             log(`Stored ${classification} memory in ${store.toUpperCase()} (confidence: ${confidence.toFixed(2)}, role: ${role}, reason: ${result.reason})`);
+            messagesProcessed++; // Track successful memory storage
           } else {
             log(`Skipped ${classification} memory: ${result.reason}`);
           }
@@ -472,7 +476,7 @@ async function processSessionIdle(
         }
       }
 
-      extractionSucceeded = true;
+      // extractionSucceeded flag removed - now tracking messagesProcessed
     } catch (error) {
       log(`Extraction failed with critical error: ${error}`);
       // Don't update watermark if extraction failed with critical error
@@ -480,12 +484,8 @@ async function processSessionIdle(
     }
   }
 
-  // Only update watermark if extraction was attempted and succeeded, or if no extraction was needed
-  if (!extractionAttempted || extractionSucceeded) {
-    state.db.updateMessageWatermark(effectiveSessionId, messages.length);
-    // Update last extraction time only when extraction was actually executed or there was nothing to extract
-    lastExtractionTime = Date.now();
-  }
+  // ALWAYS update watermark to prevent infinite loop
+  state.db.updateMessageWatermark(effectiveSessionId, messages.length);
 }
 
 async function handleSessionEnd(

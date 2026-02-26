@@ -387,7 +387,56 @@ export class MemoryDatabase {
     // Generate content hash for O(1) exact duplicate detection
     const contentHash = generateContentHash(summary);
 
-    // Begin transaction for reconsolidation and insertion
+    // Phase 7: Reconsolidation - Check for similar memories using Jaccard similarity
+    // EXECUTE OUTSIDE transaction - async operation
+    const similarMemories = await this.vectorSearch(summary, features.projectScope ?? undefined, 1);
+
+    let reconsolidationAction: { type: 'conflict' | 'complement', existingMemoryId?: string } | null = null;
+
+    if (similarMemories.length > 0) {
+      const existingMemory = similarMemories[0];
+      if (existingMemory) {
+        const similarity = this.jaccardSimilarity(summary, existingMemory.summary);
+
+        if (isRelevant(similarity)) {
+          // Call reconsolidation logic
+          const newMemoryData = {
+            store,
+            classification,
+            summary,
+            sourceEventIds,
+            projectScope: features.projectScope ?? undefined,
+            sessionId: features.sessionId,
+          };
+
+          const action = await handleReconsolidation(this, newMemoryData, existingMemory, similarity);
+
+          switch (action.type) {
+            case 'duplicate':
+              // Increment frequency and return updated memory (no new insert)
+              const existingMemoryRow = this.db.prepare(
+                `SELECT * FROM memory_units WHERE id = ?`
+              ).get(action.updatedMemory.id) as any;
+              if (existingMemoryRow) {
+                this.incrementFrequency(existingMemoryRow.id);
+              }
+              return action.updatedMemory;
+
+            case 'conflict':
+              // Delete existing memory, then proceed with insert of new memory (in transaction)
+              reconsolidationAction = { type: 'conflict', existingMemoryId: action.existingMemoryId };
+              break;
+
+            case 'complement':
+              // Proceed with normal insert
+              reconsolidationAction = { type: 'complement' };
+              break;
+          }
+        }
+      }
+    }
+
+    // Begin transaction for insertion only
     this.db.exec('BEGIN TRANSACTION');
 
     try {
@@ -402,47 +451,16 @@ export class MemoryDatabase {
         this.incrementFrequency(exactDuplicate.id);
         const updatedMemory = this.getMemory(exactDuplicate.id);
         this.db.exec('COMMIT');
-        return updatedMemory!;
+        // Throw if memory was deleted (race condition) - this is safer than returning null which breaks function signature
+        if (!updatedMemory) {
+          throw new Error(`Memory ${exactDuplicate.id} not found after increment - likely deleted by another process`);
+        }
+        return updatedMemory;
       }
 
-      // Phase 7: Reconsolidation - Check for similar memories using Jaccard similarity
-      const similarMemories = await this.vectorSearch(summary, features.projectScope ?? undefined, 1);
-
-      if (similarMemories.length > 0) {
-        const existingMemory = similarMemories[0];
-        if (existingMemory) {
-          const similarity = this.jaccardSimilarity(summary, existingMemory.summary);
-
-          if (isRelevant(similarity)) {
-            // Call reconsolidation logic
-            const newMemoryData = {
-              store,
-              classification,
-              summary,
-              sourceEventIds,
-              projectScope: features.projectScope ?? undefined,
-              sessionId: features.sessionId,
-            };
-
-            const action = await handleReconsolidation(this, newMemoryData, existingMemory, similarity);
-
-            switch (action.type) {
-              case 'duplicate':
-                // Increment frequency and return updated memory (no new insert)
-                this.db.exec('COMMIT');
-                return action.updatedMemory;
-
-              case 'conflict':
-                // Delete existing memory, then proceed with insert of new memory (same transaction)
-                this.db.prepare(`DELETE FROM memory_units WHERE id = ?`).run(action.existingMemoryId);
-                break;
-
-              case 'complement':
-                // Proceed with normal insert
-                break;
-            }
-          }
-        }
+      // Apply reconsolidation action if determined (conflict = delete before insert)
+      if (reconsolidationAction?.type === 'conflict' && reconsolidationAction.existingMemoryId) {
+        this.db.prepare(`DELETE FROM memory_units WHERE id = ?`).run(reconsolidationAction.existingMemoryId);
       }
 
       // Proceed with normal memory creation
