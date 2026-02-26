@@ -115,6 +115,15 @@ Add to your `~/.config/opencode/opencode.jsonc`:
 
 OpenCode will automatically download the plugin from npm.
 
+After restarting OpenCode, you'll see a toast notification in the top-right corner confirming the plugin is loaded:
+
+```
+True-Mem vX.X.X
+Memory active.
+```
+
+This confirms True-Mem is installed and working correctly.
+
 ---
 
 ## Usage
