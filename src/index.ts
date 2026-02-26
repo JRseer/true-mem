@@ -41,7 +41,7 @@ const TrueMemory: Plugin = async (ctx) => {
     const version = getVersion();
     setTimeout(() => {
       showToast(ctx, `True-Mem v${version}`, 'Memory active.', 'info', 4000);
-    }, 1000);
+    }, 2000);
   }
 
   // Start initialization IMMEDIATELY but DON'T await
