@@ -112,6 +112,16 @@ const TrueMemory: Plugin = async (ctx) => {
       // Returns immediately - UI not blocked
     },
 
+    'chat.message': async (input, output) => {
+      if (!state.initialized && state.initPromise) {
+        await state.initPromise;
+      }
+
+      if (state.realHooks?.['chat.message']) {
+        await state.realHooks['chat.message'](input, output);
+      }
+    },
+
     'tool.execute.before': async (input, output) => {
       // Wait for init if needed (but init is very fast without Transformers.js)
       if (!state.initialized && state.initPromise) {
