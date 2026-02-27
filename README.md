@@ -151,7 +151,7 @@ To see which memories are currently injected in your prompt, use:
 list-memories
 ```
 
-This command displays all memories (LTM and STM) that True-Mem has injected into the current conversation context. Useful for debugging or understanding what the AI remembers about you.
+This command displays all memories grouped by scope (Global/Project) and store (LTM/STM). Useful for debugging or understanding what the AI remembers about you.
 
 ### Delete a Memory
 
