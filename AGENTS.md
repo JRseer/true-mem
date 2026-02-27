@@ -325,6 +325,25 @@ Il toast appare **a tutte le sessioni** (nuove e continuate), 2s dopo l'avvio di
 
 ---
 
+## TODO
+
+### Rimuovere classificazione `bugfix`
+
+**Motivazione:** I bugfix come memorie sono "diari di debugging" di bassa qualità, non conoscenza riutilizzabile. La tabella "Bug Risolti" in AGENTS.md è già la fonte di verità strutturata e curata.
+
+**Task:**
+1. Rimuovere `bugfix` da `CLASSIFICATION_PATTERNS` in `src/memory/patterns.ts`
+2. Rimuovere `bugfix` dalla tabella "Classificazioni Memorie" in AGENTS.md
+3. Aggiornare `classifier.ts` se necessario
+4. Opzionale: pulire memorie esistenti con `bugfix` dal DB
+
+**File da modificare:**
+- `src/memory/patterns.ts`
+- `src/memory/classifier.ts`
+- `AGENTS.md` (tabella classificazioni)
+
+---
+
 ## Risorse
 
 - [PsychMem repo](https://github.com/muratg98/psychmem)
