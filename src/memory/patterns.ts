@@ -721,135 +721,19 @@ export function getSupportedClassifications(): string[] {
 }
 
 // =============================================================================
-// Memory List Request Detection (for "elenca memorie" feature)
+// Memory List Command - Simplified single command pattern
 // =============================================================================
 
 /**
- * Pattern per rilevare richieste di elencare memorie
- * Approccio: azione + oggetto + validazione contesto
+ * Command to list injected memories
+ * Simple pattern to avoid false positives
  */
-export const MEMORY_LIST_REQUEST = {
-  // Azioni: verbi di richiesta esplicita
-  actions: {
-    latin: [
-      // English
-      'list', 'show', 'display', 'tell me', 'give me',
-      // Italian
-      'elencami', 'mostra', 'elenca', 'dammi', 'dimmi', 'fammi vedere', 'listami',
-      // Spanish
-      'lista', 'muestra', 'dame', 'dime',
-      // French
-      'liste', 'montre', 'donne-moi', 'dis-moi',
-      // German
-      'liste', 'zeig', 'gib mir', 'sag mir',
-      // Portuguese
-      'liste', 'mostre', 'dá-me', 'diga-me',
-      // Dutch
-      'lijst', 'toon', 'geef me',
-      // Turkish
-      'liste', 'göster', 'ver bana',
-      // Polish
-      'lista', 'pokaż', 'podaj',
-      // Russian (transliterated)
-      'spisok', 'pokazhi', 'daj',
-    ],
-    nonLatin: [
-      // Japanese
-      '一覧', '表示', '教えて', 'リスト',
-      // Chinese Simplified
-      '列出', '显示', '告诉我', '列表',
-      // Chinese Traditional
-      '列出', '顯示', '告訴我', '列表',
-      // Korean
-      '목록', '보여', '알려',
-      // Russian
-      'список', 'покажи', 'дай',
-      // Arabic
-      'قائمة', 'أظهر', 'أعطني',
-      // Hindi
-      'सूची', 'दिखाओ', 'बताओ',
-    ],
-  },
-
-  // Oggetti: termini specifici per memorie
-  objects: {
-    latin: [
-      // English
-      'memories', 'memory', 'what you remember', 'what you know', 'stored memories',
-      'injected memories', 'active memories',
-      // Italian
-      'memorie', 'memoria', 'ricordi', 'ricordo', 'iniettate', 'salvate', 'attive',
-      'che ricordi', 'che sai',
-      // Spanish
-      'memorias', 'memoria', 'recuerdos', 'inyectadas', 'guardadas',
-      // French
-      'mémoires', 'mémoire', 'souvenirs', 'injectées', 'sauvegardées',
-      // German
-      'erinnerungen', 'erinnerung', 'gespeichert', 'eingefügt',
-      // Portuguese
-      'memórias', 'memória', 'lembranças', 'injetadas', 'salvas',
-      // Dutch
-      'herinneringen', 'herinnering', 'opgeslagen',
-      // Turkish
-      'hafızalar', 'hafıza', 'anılar', 'kaydedilen',
-      // Polish
-      'wspomnienia', 'wspomnienie', 'zapisane',
-      // Russian (transliterated)
-      'vospominaniya', 'pamyat', 'zapomnennye',
-    ],
-    nonLatin: [
-      // Japanese
-      'メモリー', 'メモリ', '記憶', '思い出',
-      // Chinese Simplified
-      '记忆', '回忆', '存储', '注入',
-      // Chinese Traditional
-      '記憶', '回憶', '存儲', '注入',
-      // Korean
-      '기억', '메모리', '저장된',
-      // Russian
-      'воспоминания', 'память', 'запомненные',
-      // Arabic
-      'ذكريات', 'ذاكرة', 'محفوظة',
-      // Hindi
-      'स्मृतियाँ', 'स्मृति', 'यादें',
-    ],
-  },
-};
+export const MEMORY_LIST_COMMAND_PATTERN = /^(\/list-memories|list-memories)$/i;
 
 /**
- * Check if text is a request to list memories
- * Uses action + object + context validation to avoid false positives
+ * Check if text is the memory list command
  */
 export function isMemoryListRequest(text: string): boolean {
-  const lowerText = text.toLowerCase().trim();
-
-  // 1. Check for action keyword
-  const hasAction = MEMORY_LIST_REQUEST.actions.latin.some(action =>
-    lowerText.includes(action.toLowerCase())
-  ) || MEMORY_LIST_REQUEST.actions.nonLatin.some(action =>
-    text.includes(action)
-  );
-
-  if (!hasAction) return false;
-
-  // 2. Check for object keyword
-  const hasObject = MEMORY_LIST_REQUEST.objects.latin.some(obj =>
-    lowerText.includes(obj.toLowerCase())
-  ) || MEMORY_LIST_REQUEST.objects.nonLatin.some(obj =>
-    text.includes(obj)
-  );
-
-  if (!hasObject) return false;
-
-  // 3. Context validation: must be a direct request (starts with action or is a question)
-  const startsWithAction = MEMORY_LIST_REQUEST.actions.latin.some(action =>
-    lowerText.startsWith(action.toLowerCase())
-  ) || MEMORY_LIST_REQUEST.actions.nonLatin.some(action =>
-    text.startsWith(action)
-  );
-
-  const isQuestion = text.includes('?');
-
-  // Valid if starts with action OR is a question
-  return startsWithAction || isQuestion;
+  const trimmed = text.trim().toLowerCase();
+  return MEMORY_LIST_COMMAND_PATTERN.test(trimmed);
 }
