@@ -452,22 +452,6 @@ export const ALL_PATTERNS: PatternCategory[] = [
  * More specific than importance patterns - used to determine MemoryClassification.
  */
 export const CLASSIFICATION_PATTERNS = {
-  bugfix: {
-    latin: [
-      'bug', 'error', 'exception', 'crash', 'fail', 'broken', 'issue',
-      'fix', 'fixed', 'resolved', 'solved', 'patched', 'workaround',
-      'TypeError', 'ReferenceError', 'SyntaxError', 'null pointer',
-      'stack trace', 'traceback', 'segfault',
-    ],
-    nonLatin: [
-      'バグ', 'エラー', '修正', '解決',
-      '错误', '修复', '解决', '錯誤', '修復', '解決',
-      '버그', '오류', '수정',
-      'ошибка', 'исправлено',
-      'خطأ', 'إصلاح',
-      'त्रुटि', 'ठीक',
-    ],
-  },
   learning: {
     latin: [
       'learned', 'realized', 'discovered', 'found out', 'turns out',
@@ -631,10 +615,9 @@ export function matchAllPatterns(text: string): ImportanceSignal[] {
  */
 export function classifyByPatterns(text: string): string | null {
   const lowerText = text.toLowerCase();
-  
+
   // Check each classification in priority order
-  const checks: Array<{ classification: string; patterns: typeof CLASSIFICATION_PATTERNS.bugfix }> = [
-    { classification: 'bugfix', patterns: CLASSIFICATION_PATTERNS.bugfix },
+  const checks: Array<{ classification: string; patterns: typeof CLASSIFICATION_PATTERNS.learning }> = [
     { classification: 'learning', patterns: CLASSIFICATION_PATTERNS.learning },
     { classification: 'constraint', patterns: CLASSIFICATION_PATTERNS.constraint },
     { classification: 'decision', patterns: CLASSIFICATION_PATTERNS.decision },
@@ -717,7 +700,7 @@ export function hasGlobalScopeKeyword(text: string): boolean {
  * Get all classification types supported by patterns
  */
 export function getSupportedClassifications(): string[] {
-  return ['bugfix', 'learning', 'decision', 'constraint', 'preference', 'procedural'];
+  return ['learning', 'decision', 'constraint', 'preference', 'procedural'];
 }
 
 // =============================================================================
@@ -726,9 +709,9 @@ export function getSupportedClassifications(): string[] {
 
 /**
  * Command to list injected memories
- * Simple pattern to avoid false positives
+ * Accepts: list-memories, list-memory, show-memory
  */
-export const MEMORY_LIST_COMMAND_PATTERN = /^list-memories$/i;
+export const MEMORY_LIST_COMMAND_PATTERN = /^(list-memories|list-memory|show-memory)$/i;
 
 /**
  * Check if text is the memory list command

@@ -38,7 +38,7 @@ True-Mem automatically extracts and stores memories from your conversations:
 - **Preferences**: "I prefer functional style over OOP"
 - **Constraints**: "Never use `var` keyword"
 - **Decisions**: "We decided to use SQLite instead of Postgres for this project"
-- **Bugfixes**: "Fixed the auth timeout issue"
+- **Semantic info**: "The API uses REST, not GraphQL"
 - **Learning**: "Learned that bun:sqlite is built-in"
 
 Next time you open OpenCode, it remembers. No more repeating yourself.
@@ -140,18 +140,20 @@ Just have conversations with OpenCode. True-Mem extracts relevant info in the ba
 - User preferences: "I prefer TypeScript over JavaScript"
 - Constraints: "Never use var keyword"
 - Decisions: "We decided to use SQLite instead of Postgres"
-- Bugfixes: "Fixed null pointer in auth module"
+- Semantic info: "The API uses REST, not GraphQL"
 - Learning: "I learned that bun:sqlite is built-in"
 
 ### List Injected Memories
 
-To see which memories are currently injected in your prompt, use:
+To see which memories are currently injected in your prompt, use one of:
 
 ```
 list-memories
+list-memory
+show-memory
 ```
 
-This command displays all memories grouped by scope (Global/Project) and store (LTM/STM). Useful for debugging or understanding what the AI remembers about you.
+All three commands are equivalent and display all memories grouped by scope (Global/Project) and store (LTM/STM). Useful for debugging or understanding what the AI remembers about you.
 
 ### Delete a Memory
 
@@ -232,7 +234,6 @@ true-mem/
 | **learning** | Never | LTM | Global | "Learned bun:sqlite API" |
 | **procedural** | Never | STM | Global | "Run tests before commit" |
 | **decision** | Never | LTM | Project | "Decided SQLite over Postgres" |
-| **bugfix** | Never | LTM | Project | "Fixed null pointer in auth" |
 | **semantic** | Never | STM | Project | "API uses REST, not GraphQL" |
 | **episodic** | Yes (7d) | STM | Project | "Yesterday we refactored auth" |
 

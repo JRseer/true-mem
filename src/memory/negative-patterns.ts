@@ -2,7 +2,7 @@
  * Negative Patterns for False Positive Prevention
  *
  * These patterns filter out common false positives before classification.
- * E.g., "resolve DNS" should NOT trigger bugfix classification.
+ * E.g., "resolve DNS" should NOT trigger irrelevant classifications.
  */
 
 /**
@@ -274,38 +274,6 @@ export const REMIND_RECALL_PATTERNS: RegExp[] = [
 
 // Negative patterns per classification type
 export const NEGATIVE_PATTERNS: Record<string, RegExp[]> = {
-  bugfix: [
-    // resolve (not bug-related)
-    /resolve\s+(dns|ip|address|hostname|url|uri|path)/i,
-    /resolve\s+(promise|async|await)/i,
-    /git\s+resolve/i,
-    /resolve\s+conflict(?!.*(?:bug|error|crash|fail))/i,
-    /resolve\s+overlapping/i,
-
-    // fix (not bug-related)
-    /fixed\s+(width|height|position|size|length)/i,
-    /fix\s+(position|layout|spacing|padding|margin)/i,
-    /fixed-point/i,
-    /fixed\s+asset/i,
-
-    // handle (not error-related)
-    /handle\s+(click|event|input|change|submit|hover|focus|blur)/i,
-    /event\s+handler/i,
-    /click\s+handler/i,
-    /handler\s+function/i,
-
-    // address (not issue-related)
-    /\baddress\s+(space|bar|book|ing)\b/i,
-    /ip\s+address/i,
-    /mac\s+address/i,
-    /email\s+address/i,
-    /memory\s+address/i,
-
-    // error (not bug-related)
-    /error\s*(handling|handler|boundary)/i,
-    /type\s*error/i,  // TypeScript type errors in docs
-  ],
-
   decision: [
     /decided\s+to\s+(run|start|begin|try|test|check|verify|use)/i,
     /decision\s+(tree|matrix|making)/i,

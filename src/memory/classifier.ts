@@ -18,10 +18,6 @@ import {
 
 // Classification keywords for multi-keyword scoring
 const CLASSIFICATION_KEYWORDS: Record<string, { primary: string[]; boosters: string[] }> = {
-  bugfix: {
-    primary: ['error', 'bug', 'crash', 'exception', 'fail', 'broken', 'issue', 'problem', 'errore', 'guasto', 'fallimento'],
-    boosters: ['fixed', 'resolved', 'patched', 'solved', 'corrected', 'repaired', 'debugged', 'risolto', 'corretto', 'sistemato', 'patchato'],
-  },
   decision: {
     primary: ['decided', 'chose', 'selected', 'picked', 'opted', 'went with', 'deciso', 'scelto', 'selezionato'],
     boosters: ['because', 'since', 'reason', 'rationale', 'due to', 'as', 'perché', 'poiché', 'motivo', 'ragione'],
@@ -306,7 +302,6 @@ export function shouldStoreMemoryWithRole(
     learning: { validRoles: ['user'], requiresPrimary: true },
     procedural: { validRoles: ['user'], requiresPrimary: true },
     decision: { validRoles: ['user', 'assistant'], requiresPrimary: false },
-    bugfix: { validRoles: ['user', 'assistant'], requiresPrimary: false },
     semantic: { validRoles: ['user', 'assistant'], requiresPrimary: false },
     episodic: { validRoles: ['user', 'assistant'], requiresPrimary: false },
   };

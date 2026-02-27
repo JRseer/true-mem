@@ -502,9 +502,9 @@ async function processSessionIdle(
 
             // Determine store: STM vs LTM
             // - Explicit intent (confidence >= 0.85) → LTM (user explicitly said "remember this")
-            // - Auto-promote classifications → LTM (bugfix, learning, decision)
+            // - Auto-promote classifications → LTM (learning, decision)
             // - Everything else → STM
-            const autoPromoteClassifications = ['bugfix', 'learning', 'decision'];
+            const autoPromoteClassifications = ['learning', 'decision'];
             const shouldPromoteToLtm = isExplicitIntent || autoPromoteClassifications.includes(classification);
             const store = shouldPromoteToLtm ? 'ltm' : 'stm';
 

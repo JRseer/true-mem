@@ -263,6 +263,35 @@ export class MemoryDatabase {
         throw error;
       }
     }
+
+    // Migration to version 3: Remove deprecated 'bugfix' classification
+    if (currentVersion < 3) {
+      log('Applying migration v3: Removing deprecated bugfix classification...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        // Delete all memories with 'bugfix' classification
+        const result = this.db.prepare(`DELETE FROM memory_units WHERE classification = 'bugfix'`).run();
+        log(`Removed ${result.changes} bugfix memories`);
+
+        // Record migration
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          3,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v3 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v3 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v3', rollbackError);
+        }
+        throw error;
+      }
+    }
   }
 
   // Session Operations

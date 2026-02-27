@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: PsychMemConfig = {
   maxContextTokens: 4000,
 
   // Auto-promote to LTM
-  autoPromoteToLtm: ['bugfix', 'learning', 'decision'],
+  autoPromoteToLtm: ['learning', 'decision'],
 
   // Memory limits
   maxMemoriesPerStop: 7,

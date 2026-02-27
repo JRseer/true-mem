@@ -20,7 +20,6 @@ export type MemoryClassification =
   | 'episodic'
   | 'semantic'
   | 'procedural'
-  | 'bugfix'
   | 'learning'
   | 'preference'
   | 'decision'
@@ -46,7 +45,6 @@ export const USER_LEVEL_CLASSIFICATIONS: MemoryClassification[] = [
  */
 export const PROJECT_LEVEL_CLASSIFICATIONS: MemoryClassification[] = [
   'decision',
-  'bugfix',
   'episodic',
   'semantic',
 ];
@@ -125,7 +123,6 @@ export const ROLE_VALIDATION_RULES: Record<string, { validRoles: MessageRole[]; 
 
   // Project-level classifications: Can be Assistant-acknowledged
   decision: { validRoles: ['user', 'assistant'], requiresPrimary: false },
-  bugfix: { validRoles: ['user', 'assistant'], requiresPrimary: false },
   semantic: { validRoles: ['user', 'assistant'], requiresPrimary: false },
   episodic: { validRoles: ['user', 'assistant'], requiresPrimary: false },
 };

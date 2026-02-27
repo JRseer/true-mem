@@ -15,16 +15,16 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 26/02/2026 - v1.0.14 - Scope Logic Fix
+**Aggiornamento**: 27/02/2026 - v1.1.0 - Remove bugfix classification
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 106.64 KB |
+| Build (bun) | OK - 110.17 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.0.14 |
+| npm | Pubblicato 1.1.0 |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 
@@ -32,6 +32,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 | Bug | Soluzione |
 |-----|-----------|
+| bugfix classification noise | Removed classification + DB migration v3 |
 | esbuild crash | bun build |
 | QUEUED state | Opzione B + maintenance a session.end |
 | Duplicate memories | content_hash + global debounce 2s |
@@ -161,7 +162,6 @@ src/
 | learning | Mai | Global | "Imparato bun:sqlite" |
 | procedural | Mai | Global | "Test prima di commit" |
 | decision | Mai | Project | "Scelto SQLite" |
-| bugfix | Mai | Project | "Fixato auth timeout" |
 | semantic | Mai | Project | "API usa REST" |
 | episodic | Si (7gg) | Project | "Ieri abbiamo refactorato" |
 
@@ -367,23 +367,6 @@ Il toast appare **a tutte le sessioni** (nuove e continuate), 2s dopo l'avvio di
 - No emoji nel codice
 
 ---
-
-## TODO
-
-### Rimuovere classificazione `bugfix`
-
-**Motivazione:** I bugfix come memorie sono "diari di debugging" di bassa qualità, non conoscenza riutilizzabile. La tabella "Bug Risolti" in AGENTS.md è già la fonte di verità strutturata e curata.
-
-**Task:**
-1. Rimuovere `bugfix` da `CLASSIFICATION_PATTERNS` in `src/memory/patterns.ts`
-2. Rimuovere `bugfix` dalla tabella "Classificazioni Memorie" in AGENTS.md
-3. Aggiornare `classifier.ts` se necessario
-4. Opzionale: pulire memorie esistenti con `bugfix` dal DB
-
-**File da modificare:**
-- `src/memory/patterns.ts`
-- `src/memory/classifier.ts`
-- `AGENTS.md` (tabella classificazioni)
 
 ---
 
