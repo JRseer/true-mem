@@ -244,6 +244,18 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 
 ## Release Workflow (GitHub Actions)
 
+### ⚠️ REGOLA CRITICA
+
+**PRIMA di pushare per un release, fare SEMPRE bump versione:**
+
+```bash
+npm version patch   # per bug fix (1.0.14 → 1.0.15)
+npm version minor   # per nuove feature (1.0.14 → 1.1.0)
+npm version major   # per breaking changes (1.0.14 → 2.0.0)
+```
+
+Il workflow si attiva SOLO quando `package.json` cambia (versione nuova).
+
 **Automazione**: Push su main con versione nuova → npm publish + GitHub Release automatici
 
 ### File
