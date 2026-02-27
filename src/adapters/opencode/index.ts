@@ -195,19 +195,31 @@ export async function createTrueMemoryPlugin(
         if (memories.length > 0) {
           const memoryList = formatMemoryListForResponse(memories);
 
-          // Find the first text part and append the memory list to it
-          // This avoids needing to provide id, sessionID, messageID for a new part
-          const firstTextPart = output.parts.find(part => part.type === 'text' && 'text' in part);
-          if (firstTextPart && 'text' in firstTextPart) {
-            firstTextPart.text += `\n\n[TRUE-MEM] Ecco le memorie iniettate in questo prompt:\n${memoryList}`;
+          // Find the first text part and replace it with a new part containing the memory list
+          // Using a new object prevents mutation persistence across prompts
+          const firstTextPartIndex = output.parts.findIndex(part => part.type === 'text' && 'text' in part);
+          if (firstTextPartIndex !== -1) {
+            const originalPart = output.parts[firstTextPartIndex]!;
+            if ('text' in originalPart) {
+              (output.parts[firstTextPartIndex] as any) = {
+                ...originalPart,
+                text: `${originalPart.text}\n\n[TRUE-MEM] Ecco le memorie iniettate in questo prompt:\n${memoryList}`
+              };
+            }
           }
 
           log(`Memory list request detected: injected ${memories.length} memories`);
         } else {
-          // Find the first text part and append the no-memories message
-          const firstTextPart = output.parts.find(part => part.type === 'text' && 'text' in part);
-          if (firstTextPart && 'text' in firstTextPart) {
-            firstTextPart.text += '\n\n[TRUE-MEM] Nessuna memoria iniettata in questo prompt.';
+          // Find the first text part and replace it with a new part containing the no-memories message
+          const firstTextPartIndex = output.parts.findIndex(part => part.type === 'text' && 'text' in part);
+          if (firstTextPartIndex !== -1) {
+            const originalPart = output.parts[firstTextPartIndex]!;
+            if ('text' in originalPart) {
+              (output.parts[firstTextPartIndex] as any) = {
+                ...originalPart,
+                text: `${originalPart.text}\n\n[TRUE-MEM] Nessuna memoria iniettata in questo prompt.`
+              };
+            }
           }
         }
       }
@@ -641,6 +653,7 @@ function extractCleanSummary(conversationText: string, maxLength: number = 500):
     /## Compaction Instructions/gi,
     /\[LTM\]/gi,
     /\[STM\]/gi,
+    /\[TRUE-MEM\]/gi,  // Filter out memory list responses to prevent auto-reference loop
     // XML tag removal
     /<true_memory_context[^>]*>/gi,
     /<\/true_memory_context>/gi,
@@ -680,6 +693,7 @@ function extractConversationText(messages: MessageContainer[]): string {
     /## Compaction Instructions/i,
     /\[LTM\]/i,
     /\[STM\]/i,
+    /\[TRUE-MEM\]/i,  // Filter out memory list responses to prevent auto-reference loop
     // XML tag removal
     /<true_memory_context[^>]*>/gi,
     /<\/true_memory_context>/gi,
@@ -750,6 +764,7 @@ function extractConversationTextWithRoles(messages: MessageContainer[]): {
     /## Compaction Instructions/i,
     /\[LTM\]/i,
     /\[STM\]/i,
+    /\[TRUE-MEM\]/i,  // Filter out memory list responses to prevent auto-reference loop
     // XML tag removal
     /<true_memory_context[^>]*>/gi,
     /<\/true_memory_context>/gi,
