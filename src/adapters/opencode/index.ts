@@ -481,8 +481,9 @@ async function processSessionIdle(
           roleAwareContext
         );
 
-        // Pre-filter: skip URLs > 100 chars
-        if (/https?:\/\/[^\s]{100,}/.test(isolatedContent)) {
+        // Pre-filter: Skip memories with overly long URLs (>150 chars) or excessive content (>500 chars)
+        // This prevents storing stack traces, API dumps, or accidental clipboard content
+        if (/https?:\/\/[^\s]{150,}/.test(isolatedContent)) {
           log(`Skipped memory: URL too long`);
           continue;
         }

@@ -18,6 +18,9 @@ import {
 
 // Classification keywords for multi-keyword scoring
 const CLASSIFICATION_KEYWORDS: Record<string, { primary: string[]; boosters: string[] }> = {
+  // Episodic: temporal memories that decay (7 days)
+  // Examples: "yesterday we did X", "today we fixed Y"
+  // Scope: PROJECT (not global), Store: decays over time
   episodic: {
     primary: [
       // Italian
@@ -179,7 +182,10 @@ export function inferClassification(text: string): string | null {
   let bestClassification: string | null = null;
   let bestScore = 0;
 
-  for (const [classification, keywords] of Object.entries(CLASSIFICATION_KEYWORDS)) {
+  const priorityOrder = ['episodic', 'decision', 'learning', 'preference', 'constraint', 'procedural'];
+  for (const classification of priorityOrder) {
+    const keywords = CLASSIFICATION_KEYWORDS[classification];
+    if (!keywords) continue;
     const score = calculateClassificationScore(text, classification);
     if (score > bestScore) {
       bestScore = score;
