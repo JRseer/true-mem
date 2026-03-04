@@ -60,6 +60,20 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | markerPatterns ignorato | Check markerPatterns PRIMA del signal check |
 | Global keyword in marker | `hasGlobalScopeKeyword(text)` invece di `isolatedContent` |
 
+**Implementazione:**
+- **File nuovi:** `src/memory/embeddings-nlp.ts` (EmbeddingService), `src/memory/embedding-worker.ts` (worker thread)
+- **Modificati:** `src/memory/embeddings.ts` (hybrid getSimilarity), `src/index.ts` (init), `package.json` (dipendenza transformers)
+- **Modello:** `all-MiniLM-L6-v2` (q8 quantized, 384 dims, CPU only)
+- **Safety:** Circuit breaker (3 fallimenti/5min), memory cap 500MB, timeout 5s, graceful degradation a Jaccard
+
+**Come testare:**
+```bash
+git checkout NLP
+export TRUE_MEM_EMBEDDINGS=1
+bun run build
+# Test in OpenCode, monitora crash e memoria
+```
+
 ---
 
 ## Architecture Review (v1.0.12)
