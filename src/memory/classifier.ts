@@ -18,6 +18,23 @@ import {
 
 // Classification keywords for multi-keyword scoring
 const CLASSIFICATION_KEYWORDS: Record<string, { primary: string[]; boosters: string[] }> = {
+  episodic: {
+    primary: [
+      // Italian
+      'ieri', 'oggi', 'abbiamo fatto', 'siamo arrivati', 'abbiamo visto',
+      'in questa sessione', 'durante la call', 'nel meeting',
+      'abbiamo lavorato', 'abbiamo refactorato', 'abbiamo fixato',
+      // English
+      'yesterday', 'today', 'we did', 'we made', 'we worked',
+      'during the session', 'in the meeting', 'this time', 'just now',
+      'we fixed', 'we refactored', 'we implemented',
+    ],
+    boosters: [
+      'session', 'call', 'meeting', 'riunione', 'sessione',
+      'momento', 'adesso', 'ora', 'now', 'just',
+      'poco fa', 'prima', 'earlier', 'last week',
+    ],
+  },
   decision: {
     primary: ['decided', 'chose', 'selected', 'picked', 'opted', 'went with', 'deciso', 'scelto', 'selezionato'],
     boosters: ['because', 'since', 'reason', 'rationale', 'due to', 'as', 'perché', 'poiché', 'motivo', 'ragione'],
@@ -253,7 +270,10 @@ export function classifyWithExplicitIntent(
   let bestClassification: string | null = null;
   let bestScore = 0;
 
-  for (const [classification] of Object.entries(CLASSIFICATION_KEYWORDS)) {
+  const priorityOrder = ['episodic', 'decision', 'learning', 'preference', 'constraint', 'procedural'];
+  for (const classification of priorityOrder) {
+    const keywords = CLASSIFICATION_KEYWORDS[classification];
+    if (!keywords) continue;
     const score = calculateClassificationScore(isolatedContent, classification);
     if (score > bestScore) {
       bestScore = score;

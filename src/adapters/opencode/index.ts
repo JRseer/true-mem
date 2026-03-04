@@ -481,6 +481,18 @@ async function processSessionIdle(
           roleAwareContext
         );
 
+        // Pre-filter: skip URLs > 100 chars
+        if (/https?:\/\/[^\s]{100,}/.test(isolatedContent)) {
+          log(`Skipped memory: URL too long`);
+          continue;
+        }
+
+        // Pre-filter: skip content > 500 chars (before truncation)
+        if (isolatedContent.length > 500) {
+          log(`Skipped memory: content too long (${isolatedContent.length} chars)`);
+          continue;
+        }
+
         log(`Debug: Classification result: ${classification}, confidence: ${confidence.toFixed(2)}, roleValidated: ${roleValidated}, reason: ${validationReason}`);
 
         if (classification && roleValidated) {
