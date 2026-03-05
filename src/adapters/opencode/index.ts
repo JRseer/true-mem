@@ -36,6 +36,9 @@ const MIN_EXTRACTION_INTERVAL = 2000; // 2 seconds minimum between extractions
 const contextCache = new Map<string, { context: string; timestamp: number }>();
 const CACHE_TTL = 5000; // 5 seconds
 
+// Persist worktree across plugin restarts (OpenCode lifecycle issue)
+let _persistedWorktree: string | null = null;
+
 /**
  * Extract query context from conversation messages with caching
  * Used for semantic memory retrieval when embeddings are enabled
@@ -182,9 +185,15 @@ export async function createTrueMemoryPlugin(
     return !!(path && path !== '/' && path !== '\\' && path.trim().length > 0);
   };
 
-  const worktree = isValidPath(ctx.worktree)
-    ? ctx.worktree
-    : (isValidPath(ctx.directory) ? ctx.directory : `unknown-project-${Date.now()}`);
+  // FIX: Persist worktree across plugin restarts (OpenCode lifecycle)
+  // When server.instance.disposed fires, ctx.worktree becomes undefined on restart
+  const worktree = _persistedWorktree && isValidPath(_persistedWorktree)
+    ? _persistedWorktree
+    : isValidPath(ctx.worktree)
+      ? (_persistedWorktree = ctx.worktree, ctx.worktree)
+      : isValidPath(ctx.directory)
+        ? (_persistedWorktree = ctx.directory, ctx.directory)
+        : `unknown-project-${Date.now()}`;
   
   const state: TrueMemoryAdapterState = {
     db,
@@ -230,6 +239,10 @@ export async function createTrueMemoryPlugin(
             // Debounce message updates to avoid blocking UI
             debounceMessageUpdate(state, event.properties, handleMessageUpdated);
           }
+          break;
+        case 'server.instance.disposed':
+          // OpenCode is disposing the server instance - worktree is preserved in _persistedWorktree
+          log('Server instance disposed - worktree preserved for next init');
           break;
       }
     },
