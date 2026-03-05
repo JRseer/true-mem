@@ -693,6 +693,128 @@ export function hasGlobalScopeKeyword(text: string): boolean {
 }
 
 // =============================================================================
+// Contextual Scope Detection (NEW)
+// Detects if a memory should be project-scoped based on conversation context
+// =============================================================================
+
+export interface ConversationContext {
+  recentMessages: string[];
+  worktree: string;
+  projectTerms: string[];
+}
+
+/**
+ * Extract project-specific terms from worktree path
+ * e.g., "/Users/.../oh-my-opencode-slim" → ["oh-my-opencode-slim", "opencode", "slim"]
+ */
+export function extractProjectTerms(worktree: string): string[] {
+  const parts = worktree.split('/');
+  const projectName = parts[parts.length - 1];
+  
+  if (!projectName || projectName.startsWith('unknown-project')) {
+    return [];
+  }
+  
+  // Split by common separators and filter
+  return projectName
+    .split(/[-_.]/)
+    .map(part => part.toLowerCase())
+    .filter(part => part.length > 2)
+    .filter(part => !['the', 'and', 'for', 'src', 'dist', 'node', 'modules'].includes(part));
+}
+
+/**
+ * Detect if conversation context indicates project-specific discussion
+ * Returns score 0-1 where higher means more likely project-specific
+ */
+export function detectProjectSignals(context: ConversationContext): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+  const recentText = context.recentMessages.join(' ').toLowerCase();
+  
+  // Signal 1: File paths in project directory
+  const projectPath = context.worktree.toLowerCase();
+  if (recentText.includes(projectPath) || recentText.includes(projectPath.replace(/\/Users\/[^/]+/, '~'))) {
+    score += 0.4;
+    reasons.push('project_path_mentioned');
+  }
+  
+  // Signal 2: Project-specific terms
+  const projectTerms = extractProjectTerms(context.worktree);
+  const termMatches = projectTerms.filter(term => recentText.includes(term));
+  if (termMatches.length > 0) {
+    score += Math.min(0.3 * termMatches.length, 0.5);
+    reasons.push(`project_terms: ${termMatches.join(', ')}`);
+  }
+  
+  // Signal 3: Explicit project context phrases
+  const projectPhrases = [
+    /in (this |the )?project/i,
+    /nel(l)? (progetto|mio progetto)/i,
+    /here in/i,
+    /in this (session|conversation|chat)/i,
+    /per (questo |il )?progetto/i,
+    /for (this |the )?project/i,
+  ];
+  if (projectPhrases.some(p => p.test(recentText))) {
+    score += 0.3;
+    reasons.push('explicit_project_context');
+  }
+  
+  // Signal 4: Technical terms specific to this codebase
+  // Check if memory mentions files/tools specific to the project
+  const fileReferences = recentText.match(/\b[A-Za-z_-]+\.(ts|js|json|md|py)\b/g);
+  if (fileReferences && fileReferences.length > 0) {
+    score += Math.min(0.1 * fileReferences.length, 0.3);
+    reasons.push(`file_refs: ${fileReferences.slice(0, 3).join(', ')}`);
+  }
+  
+  return { score: Math.min(score, 1.0), reasons };
+}
+
+/**
+ * Determine if a user-level memory (preference, constraint, etc.) should be project-scoped
+ * based on conversation context
+ */
+export function shouldBeProjectScope(
+  memoryText: string,
+  context: ConversationContext,
+  hasGlobalKeyword: boolean
+): { isProjectScope: boolean; confidence: number; reason: string } {
+  // If explicit global keyword, respect it
+  if (hasGlobalKeyword) {
+    return { isProjectScope: false, confidence: 0.9, reason: 'explicit_global_keyword' };
+  }
+  
+  // Detect project signals in context
+  const signals = detectProjectSignals(context);
+  
+  // Threshold for project scope
+  if (signals.score >= 0.4) {
+    return { 
+      isProjectScope: true, 
+      confidence: signals.score, 
+      reason: `project_signals: ${signals.reasons.join(', ')}` 
+    };
+  }
+  
+  // Also check if memory text itself contains project-specific references
+  const projectTerms = extractProjectTerms(context.worktree);
+  const textLower = memoryText.toLowerCase();
+  const directMatches = projectTerms.filter(term => textLower.includes(term));
+  if (directMatches.length > 0) {
+    return {
+      isProjectScope: true,
+      confidence: 0.6,
+      reason: `direct_project_ref: ${directMatches.join(', ')}`
+    };
+  }
+  
+  // Default: user-level memories without signals go to global (safer for user preferences)
+  return { isProjectScope: false, confidence: 0.5, reason: 'default_user_level_global' };
+}
+
+// =============================================================================
 // Classification Helper - Export for use with classifier
 // =============================================================================
 

@@ -15,7 +15,7 @@ import {
   classifyWithRoleAwareness,
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
-import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest } from '../../memory/patterns.js';
+import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest, detectProjectSignals, extractProjectTerms, shouldBeProjectScope } from '../../memory/patterns.js';
 import { setLastInjectedMemories, getLastInjectedMemories } from '../../state.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
@@ -508,17 +508,40 @@ async function processSessionIdle(
           const result = shouldStoreMemory(isolatedContent, classification, baseSignalScore);
 
           if (result.store) {
-            // Determine scope
-            // - User-level classifications: global scope (all projects)
+            // Determine scope with contextual awareness
+            // - User-level classifications: check context for project signals
             // - Explicit intent WITH global keyword ("sempre", "ovunque", etc.): global scope
             //   NOTE: Check full text, not isolatedContent, because keywords can be in the marker
-            // - Explicit intent WITHOUT global keyword: project scope
+            // - Explicit intent WITHOUT global keyword: check context
             // - Everything else: project scope
             const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
             const isExplicitIntent = confidence >= 0.85;
             const hasGlobalKeyword = hasGlobalScopeKeyword(text);
             const isUserLevel = userLevelClassifications.includes(classification) || (isExplicitIntent && hasGlobalKeyword);
-            const scope = isUserLevel ? null : state.worktree;
+            
+            // NEW: Contextual scope detection for user-level memories
+            let scope: string | null;
+            if (isUserLevel) {
+              // Build conversation context from recent messages
+              const recentMessages = roleLines
+                .slice(-10) // Last 10 messages for context
+                .map(line => line.text);
+              
+              const context = {
+                recentMessages,
+                worktree: state.worktree,
+                projectTerms: extractProjectTerms(state.worktree),
+              };
+              
+              // Use contextual detection to determine if this should be project-scoped
+              const scopeDecision = shouldBeProjectScope(text, context, hasGlobalKeyword);
+              scope = scopeDecision.isProjectScope ? state.worktree : null;
+              
+              log(`Debug: Contextual scope detection: ${scopeDecision.isProjectScope ? 'PROJECT' : 'GLOBAL'} (confidence: ${scopeDecision.confidence.toFixed(2)}, reason: ${scopeDecision.reason})`);
+            } else {
+              // Non-user-level memories default to project scope
+              scope = state.worktree;
+            }
 
             // Determine store: STM vs LTM
             // - Explicit intent (confidence >= 0.85) → LTM (user explicitly said "remember this")
