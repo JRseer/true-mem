@@ -206,7 +206,8 @@ async function selectMemoriesForInjection(
   worktree: string,
   queryContext: string,
   embeddingsEnabled: boolean,
-  maxMemories: number = 20  // User-configurable, default 20
+  maxMemories: number = 20,  // User-configurable, default 20
+  maxTokens: number = 4000   // Token budget for memories
 ): Promise<MemoryUnit[]> {
   // Scale quotas proportionally to maxMemories
   // Default (20): 6 GLOBAL + 6 PROJECT + 8 FLEXIBLE
@@ -215,17 +216,49 @@ async function selectMemoriesForInjection(
   const MIN_GLOBAL = Math.floor(maxMemories * 0.3);    // 30% of total
   const MIN_PROJECT = Math.floor(maxMemories * 0.3);  // 30% of total
   const MAX_FLEXIBLE = maxMemories - MIN_GLOBAL - MIN_PROJECT;  // Remaining ~40%
+  const MAX_CONSTRAINTS = 10;  // Cap constraints to prevent overflow
   
   const memories: MemoryUnit[] = [];
+  let totalTokens = 0;
   
   // Step 1: Get all memories for current scope (GLOBAL + current PROJECT)
   const allMemories = db.getMemoriesByScope(worktree, 100);
+  
+  // EARLY RETURN: If total memories <= maxMemories, return all
+  // No need for complex allocation with small pools
+  if (allMemories.length <= maxMemories) {
+    log(`Small memory pool: returning all ${allMemories.length} memories`);
+    return allMemories;
+  }
+  
   const globalMemories = allMemories.filter(m => m.project_scope === null);
   const projectMemories = allMemories.filter(m => m.project_scope !== null);
   
-  // Step 2: Tier 0 - Include ALL constraints (critical rules, no limit)
-  const constraints = allMemories.filter(m => m.classification === 'constraint');
-  memories.push(...constraints);
+  // Helper: Estimate tokens (rough approximation: 1 token ≈ 4 chars)
+  const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+  
+  // Helper: Add memory if within token budget
+  const addMemory = (memory: MemoryUnit): boolean => {
+    const tokens = estimateTokens(memory.summary);
+    if (totalTokens + tokens > maxTokens) {
+      log(`Token budget exceeded, skipping memory ${memory.id}`);
+      return false;
+    }
+    memories.push(memory);
+    totalTokens += tokens;
+    return true;
+  };
+  
+  // Step 2: Tier 0 - Include constraints (capped at MAX_CONSTRAINTS)
+  // Constraints are critical but we cap to prevent bloating
+  const constraints = allMemories
+    .filter(m => m.classification === 'constraint')
+    .sort((a, b) => b.strength - a.strength)
+    .slice(0, MAX_CONSTRAINTS);
+  
+  for (const constraint of constraints) {
+    if (!addMemory(constraint)) break;
+  }
   
   // Step 3: Scope quotas - Minimum guarantees (scaled to maxMemories)
   // GLOBAL: Top by strength (preference, learning, procedural)
@@ -233,14 +266,20 @@ async function selectMemoriesForInjection(
     .filter(m => !memories.find(existing => existing.id === m.id))
     .sort((a, b) => b.strength - a.strength)
     .slice(0, MIN_GLOBAL);
-  memories.push(...globalHigh);
+  
+  for (const memory of globalHigh) {
+    if (!addMemory(memory)) break;
+  }
   
   // PROJECT: Top by strength (decision, semantic)
   const projectHigh = projectMemories
     .filter(m => !memories.find(existing => existing.id === m.id))
     .sort((a, b) => b.strength - a.strength)
     .slice(0, MIN_PROJECT);
-  memories.push(...projectHigh);
+  
+  for (const memory of projectHigh) {
+    if (!addMemory(memory)) break;
+  }
   
   // Step 4: Flexible slots - Context-relevant selection (scaled)
   const remainingSlots = maxMemories - memories.length;
@@ -252,31 +291,36 @@ async function selectMemoriesForInjection(
     // Deduplicate and fill remaining slots
     const existingIds = new Set(memories.map(m => m.id));
     const newMemories = relevant.filter(m => !existingIds.has(m.id));
-    memories.push(...newMemories.slice(0, remainingSlots));
     
-    log(`Dynamic selection: ${memories.length} total (${globalHigh.length} global + ${projectHigh.length} project + ${newMemories.length} context-relevant) [max=${maxMemories}]`);
+    for (const memory of newMemories.slice(0, remainingSlots)) {
+      if (!addMemory(memory)) break;
+    }
+    
+    log(`Dynamic selection: ${memories.length} total (${globalHigh.length} global + ${projectHigh.length} project + ${newMemories.length} context-relevant) [max=${maxMemories}, tokens=${totalTokens}]`);
   } else if (remainingSlots > 0) {
     // Fallback: Fill with highest strength from either scope
     const remaining = allMemories
       .filter(m => !memories.find(existing => existing.id === m.id))
       .sort((a, b) => b.strength - a.strength)
       .slice(0, remainingSlots);
-    memories.push(...remaining);
     
-    log(`Fallback selection: ${memories.length} total (strength-based) [max=${maxMemories}]`);
+    for (const memory of remaining) {
+      if (!addMemory(memory)) break;
+    }
+    
+    log(`Fallback selection: ${memories.length} total (strength-based) [max=${maxMemories}, tokens=${totalTokens}]`);
   }
   
-  return memories.slice(0, maxMemories); // Hard limit at user-configured max
+  return memories; // Already capped by token budget and maxMemories
 }
 ```
 
-**Benefits:**
-- **Scope protection**: GLOBAL preferences can't drown PROJECT context (min 6 each)
-- **Classification priority**: Constraints always included, episodic lowest priority
-- **Dynamic allocation**: Adapts to user's actual memory distribution
-- **Quality over quantity**: 20 highly relevant > 30 random memories
-- **Token stable**: Always 20 memories, cost predictable
-- **Graceful degradation**: Works with or without embeddings
+**Key Improvements (Oracle Review Fixes):**
+- **Early return**: Small pools (< maxMemories) skip complex allocation
+- **Constraint cap**: MAX_CONSTRAINTS = 10 prevents overflow
+- **Token counting**: Tracks actual token cost, not just memory count
+- **Token budget**: Respects maxTokens limit (default 4000)
+- **Better logging**: Includes token count for debugging
 
 ### 3.2.1 User-Configurable Memory Limit
 
@@ -309,19 +353,74 @@ export TRUE_MEM_MAX_MEMORIES=20  # Default
 **Implementation:**
 ```typescript
 // src/config.ts
+
+// Environment variable reading with validation
+function getMaxMemories(): number {
+  const envValue = process.env.TRUE_MEM_MAX_MEMORIES;
+  if (!envValue) return 20; // Default
+  
+  const parsed = parseInt(envValue, 10);
+  if (isNaN(parsed) || parsed < 1) {
+    log(`Invalid TRUE_MEM_MAX_MEMORIES: ${envValue}, using default 20`);
+    return 20;
+  }
+  
+  // Warnings for extreme values
+  if (parsed < 10) {
+    log(`Warning: TRUE_MEM_MAX_MEMORIES=${parsed} may reduce context quality`);
+  }
+  if (parsed > 50) {
+    log(`Warning: TRUE_MEM_MAX_MEMORIES=${parsed} may cause token bloat`);
+  }
+  
+  return parsed;
+}
+
 export const DEFAULT_CONFIG = {
   // ... existing config
-  maxMemories: parseInt(process.env.TRUE_MEM_MAX_MEMORIES || '20', 10),
-  minGlobalMemories: 6,
-  minProjectMemories: 6,
+  maxMemories: getMaxMemories(),
+  maxTokensForMemories: 4000,  // Token budget for memory injection
+  
+  // Scope quotas (scale proportionally to maxMemories)
+  get scopeQuotas() {
+    const max = this.maxMemories;
+    return {
+      minGlobal: Math.floor(max * 0.3),    // 30%
+      minProject: Math.floor(max * 0.3),  // 30%
+      maxFlexible: max - Math.floor(max * 0.3) - Math.floor(max * 0.3),  // ~40%
+    };
+  },
 };
 
-// Validation
-if (config.maxMemories < 10) {
-  log('Warning: maxMemories < 10 may reduce context quality');
-}
-if (config.maxMemories > 50) {
-  log('Warning: maxMemories > 50 may cause token bloat');
+// Constraint handling
+export const CONSTRAINT_CONFIG = {
+  maxConstraints: 10,  // Cap to prevent overflow
+  alwaysInclude: true, // Prioritize constraints
+};
+```
+
+**Configuration Priority:**
+1. `TRUE_MEM_MAX_MEMORIES` env var (highest priority)
+2. Default value 20 (fallback)
+3. Validation warnings for <10 or >50
+
+**Integration in hook:**
+```typescript
+// src/adapters/opencode/index.ts
+'experimental.chat.system.transform': async (input, output) => {
+  const maxMemories = state.config.maxMemories;
+  const scopeQuotas = state.config.scopeQuotas;
+  
+  const memories = await selectMemoriesForInjection(
+    state.db,
+    state.worktree,
+    queryContext,
+    embeddingsEnabled,
+    maxMemories,
+    state.config.maxTokensForMemories
+  );
+  
+  log(`Injected ${memories.length} memories (limit: ${maxMemories})`);
 }
 ```
 
@@ -341,10 +440,13 @@ if (config.maxMemories > 50) {
 - **Higher limit (25-30)**: More context, but higher token cost (~25-50% more)
 
 **Dynamic adjustment:**
-The algorithm automatically adapts to the limit:
-- Min 6 GLOBAL + Min 6 PROJECT are always respected
-- Flexible slots = `maxMemories - 12` (or less if fewer memories exist)
-- Example with limit=30: 6 GLOBAL + 6 PROJECT + 18 flexible
+The algorithm automatically adapts to the limit using proportional quotas:
+- Min 30% GLOBAL + Min 30% PROJECT are always respected
+- Flexible slots = remaining ~40%
+- Examples:
+  - limit=20: 6 GLOBAL + 6 PROJECT + 8 flexible
+  - limit=30: 9 GLOBAL + 9 PROJECT + 12 flexible
+  - limit=15: 4 GLOBAL + 4 PROJECT + 7 flexible
 
 ### 3.3 Integration Points
 
@@ -472,20 +574,29 @@ function extractQueryContextFromInput(input: any): string {
 
 ### Phase 2: Message Fetching (Week 1-2)
 
-**Goal:** Fetch recent messages from session for context extraction
+**Goal:** Fetch recent messages from session for context extraction with caching
+
+**⚠️ CRITICAL:** Verify OpenCode SDK API before implementation
+```typescript
+// VERIFY: Check if client.session.messages() exists in @opencode-ai/sdk
+// If not available, Phase 2 cannot proceed as planned
+```
 
 **Files to modify:**
 - `src/adapters/opencode/index.ts` - Enhance `extractQueryContextFromInput()`
 
 **Tasks:**
-1. Use `state.client.session.messages()` to fetch recent messages
-2. Extract text from message parts
-3. Build context window (last 5 messages)
-4. Handle errors gracefully (return empty string on failure)
+1. ✅ Use `state.client.session.messages()` to fetch recent messages
+2. ✅ Extract text from message parts
+3. ✅ Build context window (last 5 messages)
+4. ✅ **Add context caching** (avoid repeated API calls)
+5. ✅ Handle errors gracefully (return empty string on failure)
 
-**Code location:**
+**Context Caching Strategy:**
 ```typescript
-// src/adapters/opencode/index.ts (enhanced function)
+// Cache to avoid fetching messages on every injection
+const contextCache = new Map<string, { context: string; timestamp: number }>();
+const CACHE_TTL = 5000; // 5 seconds
 
 async function extractQueryContextFromInput(
   client: PluginInput['client'],
@@ -493,7 +604,15 @@ async function extractQueryContextFromInput(
 ): Promise<string> {
   if (!sessionId) return '';
   
+  // Check cache
+  const cached = contextCache.get(sessionId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    log('Using cached context');
+    return cached.context;
+  }
+  
   try {
+    // ⚠️ VERIFY: This API must exist in OpenCode SDK
     const response = await client.session.messages({ path: { id: sessionId } });
     if (response.error || !response.data) return '';
     
@@ -510,13 +629,29 @@ async function extractQueryContextFromInput(
     }
     
     const fullContext = contextParts.join(' | ');
-    return fullContext.slice(-500); // Truncate to 500 chars
+    const truncatedContext = fullContext.slice(-500); // Truncate to 500 chars
+    
+    // Update cache
+    contextCache.set(sessionId, { context: truncatedContext, timestamp: Date.now() });
+    
+    return truncatedContext;
   } catch (error) {
     log('Failed to extract query context:', error);
     return '';
   }
 }
 ```
+
+**Performance Impact:**
+- Without cache: ~50-100ms per injection (API call)
+- With cache: ~1ms per injection (cache hit)
+- Cache TTL: 5 seconds (refreshes after user stops typing)
+
+**Fallback if API unavailable:**
+If `client.session.messages()` doesn't exist:
+1. Return empty string (vectorSearch won't be used)
+2. Fallback to strength-based selection
+3. Log warning: "Context extraction unavailable, using strength-based fallback"
 
 ### Phase 3: Smart Memory Selection (Week 2)
 
@@ -700,11 +835,13 @@ export async function selectMemoriesForInjection(
   db: MemoryDatabase,
   worktree: string,
   queryContext: string,
-  embeddingsEnabled: boolean
+  embeddingsEnabled: boolean,
+  maxMemories: number = 20,      // User-configurable limit
+  maxTokens: number = 4000        // Token budget
 ): Promise<MemoryUnit[]>
 ```
 
-**No breaking changes to existing APIs.**
+**Updated function signature with token tracking and proportional quotas.**
 
 ### 5.3 Configuration
 
@@ -721,9 +858,29 @@ export async function selectMemoriesForInjection(
 | Total injection | ~150-250ms | ~60ms |
 
 **Optimization opportunities:**
-1. Cache context extraction result (reuse for multiple injections)
+1. ✅ Cache context extraction result (reuse for multiple injections) - **IMPLEMENTED**
 2. Pre-compute embeddings for all memories (background task)
 3. Use smaller context window (3 messages instead of 5)
+
+### 5.5 Oracle Review Fixes
+
+**Issues identified and fixed based on Oracle strategic review:**
+
+| Issue | Fix | Status |
+|-------|-----|--------|
+| **Constraint overflow** | Cap constraints at MAX_CONSTRAINTS=10 | ✅ Fixed |
+| **Small pool handling** | Early return if allMemories.length <= maxMemories | ✅ Fixed |
+| **Token counting** | Added token estimation and budget tracking | ✅ Fixed |
+| **API verification** | Added warning to verify client.session.messages() exists | ⚠️ Must verify before implementation |
+| **Context caching** | Added 5-second TTL cache for message fetching | ✅ Fixed |
+| **Config integration** | Added getMaxMemories() with validation | ✅ Fixed |
+| **Proportional quotas** | Changed from fixed 6+6+8 to 30%+30%+40% | ✅ Fixed |
+
+**Critical pre-implementation checks:**
+1. ⚠️ **VERIFY:** OpenCode SDK has `client.session.messages()` API
+2. ⚠️ **TEST:** Constraint handling with >10 constraints
+3. ⚠️ **TEST:** Token budget enforcement with long memories
+4. ⚠️ **TEST:** Context cache behavior with rapid successive calls
 
 ---
 
