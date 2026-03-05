@@ -18,13 +18,18 @@ let memoryCheckInterval: ReturnType<typeof setInterval> | null = null; // FIX P1
 async function initialize() {
   try {
     log('Initializing embedding model:', workerData.model);
+    log('Transformers.js env configured, cacheDir:', env.cacheDir);
+    
     extractor = await pipeline('feature-extraction', workerData.model, {
       dtype: 'q8', // Quantized for memory efficiency
       device: 'cpu', // CPU only - avoid WebGPU crashes
     });
+    
+    log('Model loaded successfully');
     parentPort?.postMessage({ type: 'ready' });
-  } catch (error) {
-    parentPort?.postMessage({ type: 'error', error: String(error) });
+  } catch (error: any) {
+    log('Failed to initialize model:', error?.message || error);
+    parentPort?.postMessage({ type: 'error', error: String(error?.message || error) });
     process.exit(1);
   }
 }
