@@ -19,6 +19,9 @@ interface WorkerMessage {
   message?: string;
 }
 
+// Cache Node.js availability (doesn't change during session)
+let nodeAvailableCache: boolean | null = null;
+
 // Resolve worker path from package root (bundler-agnostic)
 function resolveWorkerPath(): string {
   const bundleDir = path.dirname(url.fileURLToPath(import.meta.url));
@@ -296,13 +299,23 @@ export class EmbeddingService {
 
   // CRITICAL: Check if Node.js is available before spawning
   private async checkNodeAvailable(): Promise<boolean> {
+    // Return cached result if available
+    if (nodeAvailableCache !== null) {
+      log(`Node.js availability (cached): ${nodeAvailableCache}`);
+      return nodeAvailableCache;
+    }
+    
     try {
       const { exec } = await import('child_process');
       const { promisify } = await import('util');
       const execAsync = promisify(exec);
       await execAsync('node --version');
+      nodeAvailableCache = true;
+      log('Node.js availability: true');
       return true;
-    } catch {
+    } catch (error) {
+      nodeAvailableCache = false;
+      log(`Node.js availability: false (${error})`);
       return false;
     }
   }
