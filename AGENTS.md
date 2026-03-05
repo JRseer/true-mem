@@ -609,6 +609,37 @@ Tier 3: semantic, episodic (bassa priorità, dipende dal contesto)
 
 ---
 
+## Configurazione Limite Memorie
+
+**Default:** 20 memorie iniettate nel context
+
+**Personalizzazione:**
+```bash
+# Aggiungi al tuo ~/.bashrc, ~/.zshrc, o shell profile
+export TRUE_MEM_MAX_MEMORIES=25  # Aumenta a 25 per più contesto
+export TRUE_MEM_MAX_MEMORIES=15  # Diminuisci a 15 per risparmiare token
+export TRUE_MEM_MAX_MEMORIES=20  # Default (bilanciato)
+```
+
+**Linee guida:**
+
+| Caso d'uso | Limite consigliato | Motivazione |
+|------------|-------------------|-------------|
+| Nuovo utente (< 20 memorie) | 10-15 | Poche memorie, meno rumore |
+| Utente regolare (20-50 memorie) | 20 (default) | Bilanciamento qualità/costo |
+| Power user (50+ memorie) | 25-30 | Più contesto necessario |
+| Sensibile ai token | 10-15 | Minimizza i costi |
+| Massimo contesto | 30 | Limite superiore sicuro |
+
+**Trade-off:**
+- **Limite basso (10-15)**: Costo token ridotto, ma può perdere memorie rilevanti
+- **Default (20)**: Bilanciamento ottimale per la maggior parte degli utenti
+- **Limite alto (25-30)**: Più contesto, ma costo token più alto (~25-50% in più)
+
+**Nota:** Il limite è configurabile solo tramite environment variable. Richiede riavvio di OpenCode per avere effetto.
+
+---
+
 ## Best Practice
 
 - Background tasks: attendere notifica automatica, no polling

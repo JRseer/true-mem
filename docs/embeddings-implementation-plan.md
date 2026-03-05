@@ -274,6 +274,74 @@ async function selectMemoriesForInjection(
 - **Token stable**: Always 20 memories, cost predictable
 - **Graceful degradation**: Works with or without embeddings
 
+### 3.2.1 User-Configurable Memory Limit
+
+**Goal:** Allow users to customize the maximum number of injected memories
+
+**Default:** 20 memories
+
+**Configuration options:**
+
+**Option 1: Environment Variable (Recommended)**
+```bash
+# In ~/.bashrc, ~/.zshrc, or shell profile
+export TRUE_MEM_MAX_MEMORIES=25  # Increase to 25
+export TRUE_MEM_MAX_MEMORIES=15  # Decrease to 15
+export TRUE_MEM_MAX_MEMORIES=20  # Default
+```
+
+**Option 2: OpenCode Config (Future)**
+```json
+// ~/.config/opencode/opencode.jsonc
+{
+  "plugins": {
+    "true-mem": {
+      "maxMemories": 25
+    }
+  }
+}
+```
+
+**Implementation:**
+```typescript
+// src/config.ts
+export const DEFAULT_CONFIG = {
+  // ... existing config
+  maxMemories: parseInt(process.env.TRUE_MEM_MAX_MEMORIES || '20', 10),
+  minGlobalMemories: 6,
+  minProjectMemories: 6,
+};
+
+// Validation
+if (config.maxMemories < 10) {
+  log('Warning: maxMemories < 10 may reduce context quality');
+}
+if (config.maxMemories > 50) {
+  log('Warning: maxMemories > 50 may cause token bloat');
+}
+```
+
+**Guidelines for users:**
+
+| Use Case | Recommended Limit | Rationale |
+|----------|-------------------|-----------|
+| New user (< 20 memories) | 10-15 | Fewer memories, less noise |
+| Regular user (20-50 memories) | 20 (default) | Balanced quality/cost |
+| Power user (50+ memories) | 25-30 | More context needed |
+| Token-sensitive | 10-15 | Minimize costs |
+| Maximum context | 30 | Upper safe limit |
+
+**Trade-offs:**
+- **Lower limit (10-15)**: Lower token cost, but may miss relevant memories
+- **Default (20)**: Optimal balance for most users
+- **Higher limit (25-30)**: More context, but higher token cost (~25-50% more)
+
+**Dynamic adjustment:**
+The algorithm automatically adapts to the limit:
+- Min 6 GLOBAL + Min 6 PROJECT are always respected
+- Flexible slots = `maxMemories - 12` (or less if fewer memories exist)
+- Example with limit=30: 6 GLOBAL + 6 PROJECT + 18 flexible
+
 ### 3.3 Integration Points
 
 **File: `src/adapters/opencode/index.ts`**
