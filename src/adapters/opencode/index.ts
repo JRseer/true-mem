@@ -194,7 +194,7 @@ export async function createTrueMemoryPlugin(
     client: ctx.client,
   };
 
-  log(`True-Mem initialized — worktree=${worktree}`);
+  log(`True-Mem initialized — worktree=${worktree}, maxMemories=${config.maxMemories}`);
 
   // Extract project name and create professional startup message
   const projectName = worktree.split(/[/\\]/).pop() || 'Unknown';
