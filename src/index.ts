@@ -67,8 +67,8 @@ const TrueMemory: Plugin = async (ctx) => {
         state.realHooks = await createTrueMemoryPlugin(state.ctx);
         state.initialized = true;
 
-        // Initialize NLP embeddings if feature flag is set
-        if (process.env.TRUE_MEM_EMBEDDINGS) {
+        // Initialize NLP embeddings if feature flag is set to '1'
+        if (process.env.TRUE_MEM_EMBEDDINGS === '1') {
           const embeddingService = EmbeddingService.getInstance();
           const initialized = await embeddingService.initialize();
           if (initialized) {
