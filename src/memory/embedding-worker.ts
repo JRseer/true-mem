@@ -14,13 +14,15 @@ async function loadTransformers() {
   const { pipeline: p, env: e } = await eval("import('@huggingface/transformers')");
   pipeline = p;
   env = e;
+  
+  // Configure for stability AFTER loading
+  if (env?.backends?.onnx?.wasm) {
+    env.backends.onnx.wasm.numThreads = 2;
+  }
+  env.cacheDir = process.env.HOME ? `${process.env.HOME}/.true-mem/models` : '~/.true-mem/models';
+  
+  log('Transformers.js configured, cacheDir:', env.cacheDir);
 }
-
-// Configure for stability
-if (env?.backends?.onnx?.wasm) {
-  env.backends.onnx.wasm.numThreads = 2;
-}
-env.cacheDir = process.env.HOME ? `${process.env.HOME}/.true-mem/models` : '~/.true-mem/models';
 
 let extractor: any = null;
 let memoryCheckInterval: ReturnType<typeof setInterval> | null = null; // FIX P1: Track interval
