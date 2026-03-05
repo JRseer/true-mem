@@ -188,14 +188,21 @@ export class EmbeddingService {
       });
 
       // Wait for worker to be ready (max 30 seconds)
+      let initTimeout: ReturnType<typeof setTimeout> | null = null;
       const timeoutPromise = new Promise<boolean>((resolve) => {
-        setTimeout(() => {
+        initTimeout = setTimeout(() => {
           log('Embedding worker initialization timeout');
           resolve(false);
         }, 30000);
       });
 
       const workerReady = await Promise.race([this.readyPromise, timeoutPromise]);
+      
+      // CRITICAL: Clear timeout if worker became ready before timeout
+      if (initTimeout) {
+        clearTimeout(initTimeout);
+        initTimeout = null;
+      }
       
       if (workerReady) {
         this.enabled = true;
