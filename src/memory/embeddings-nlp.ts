@@ -48,16 +48,16 @@ export class EmbeddingService {
     }
 
     try {
+      // FIX P0: Create promise BEFORE spawning worker (race condition)
+      this.readyPromise = new Promise((resolve) => {
+        this.readyResolve = resolve;
+      });
+
       // Create worker thread for embeddings
       const workerPath = path.join(__dirname, 'embedding-worker.js');
       
       this.worker = new Worker(workerPath, {
         workerData: { model: 'Xenova/all-MiniLM-L6-v2' }
-      });
-
-      // Create promise for ready state
-      this.readyPromise = new Promise((resolve) => {
-        this.readyResolve = resolve;
       });
 
       // Handle worker messages
@@ -125,6 +125,8 @@ export class EmbeddingService {
     try {
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
+          // FIX P1: Remove handler on timeout to prevent leak
+          this.worker?.off('message', messageHandler);
           reject(new Error('Embedding timeout'));
         }, 5000); // 5 second timeout
 

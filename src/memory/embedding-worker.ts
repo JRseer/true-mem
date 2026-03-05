@@ -13,6 +13,7 @@ if (env.backends?.onnx?.wasm) {
 env.cacheDir = process.env.HOME ? `${process.env.HOME}/.true-mem/models` : '~/.true-mem/models';
 
 let extractor: any = null;
+let memoryCheckInterval: ReturnType<typeof setInterval> | null = null; // FIX P1: Track interval
 
 async function initialize() {
   try {
@@ -47,13 +48,28 @@ parentPort?.on('message', async (msg) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
+  // FIX P1: Clear interval to prevent leak
+  if (memoryCheckInterval) {
+    clearInterval(memoryCheckInterval);
+  }
+  
+  // FIX P0: Try to dispose extractor (v4 may support this)
+  if (extractor && typeof extractor.dispose === 'function') {
+    try {
+      await extractor.dispose();
+      log('Extractor disposed successfully');
+    } catch (err) {
+      log('Error disposing extractor:', err);
+    }
+  }
+  
   parentPort?.postMessage({ type: 'shutdown' });
   process.exit(0);
 });
 
 // Memory monitoring
-setInterval(() => {
+memoryCheckInterval = setInterval(() => { // FIX P1: Save interval reference
   const usage = process.memoryUsage();
   if (usage.heapUsed > 500 * 1024 * 1024) { // 500MB cap
     parentPort?.postMessage({ type: 'error', error: 'Memory limit exceeded' });
