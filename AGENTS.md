@@ -15,18 +15,19 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 27/02/2026 - v1.1.0 - Remove bugfix classification
+**Aggiornamento**: 05/03/2026 - v1.2.0-rc.0 - Meta-command detection
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 110.17 KB |
+| Build (bun) | OK - 127.50 KB |
 | TypeCheck | OK - 0 errors |
 | Runtime | OK - Funzionante |
-| npm | Pubblicato 1.1.0 |
+| npm | Pubblicato 1.1.0 (main), rc in develop |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
+| Meta-Command | OK - Previene loop infiniti |
 
 ### Branch Attivi
 
@@ -44,11 +45,12 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 - **NON per rilascio diretto** - Solo test locali, merge in main per release
 
 **Fix Applicati su develop:**
-1. **Contextual scope detection:** Memorie user-level (preference, constraint, etc.) ora possono essere project-scoped basate sul contesto conversazione
-2. **Hybrid similarity consistency:** `database.ts:429` ora usa `getSimilarity()` invece di `jaccardSimilarity()` per reconsolidation
-3. **SIGINT handler:** Aggiunto handler per Ctrl+C nel worker thread
-4. **Graceful shutdown:** Worker cleanup via messaggio + timeout (2s) prima di force terminate
-5. **Env check fix:** `TRUE_MEM_EMBEDDINGS` deve essere esplicitamente `'1'` per attivare embeddings
+1. **Meta-Command Detection:** Rilevazione comandi al sistema memoria (es. "cancelliamo questa memoria") per prevenire loop infiniti - vedi sezione dedicata
+2. **Contextual scope detection:** Memorie user-level (preference, constraint, etc.) ora possono essere project-scoped basate sul contesto conversazione
+3. **Hybrid similarity consistency:** `database.ts:429` ora usa `getSimilarity()` invece di `jaccardSimilarity()` per reconsolidation
+4. **SIGINT handler:** Aggiunto handler per Ctrl+C nel worker thread
+5. **Graceful shutdown:** Worker cleanup via messaggio + timeout (2s) prima di force terminate
+6. **Env check fix:** `TRUE_MEM_EMBEDDINGS` deve essere esplicitamente `'1'` per attivare embeddings
 
 **Problemi Noti (develop branch):**
 - ⚠️ **Bun panic alla chiusura di OpenCode** - Crash C++ exception visibile nel terminale quando embeddings attive
@@ -473,6 +475,26 @@ Il toast appare **a tutte le sessioni** (nuove e continuate), 2s dopo l'avvio di
 - Versione letta con `findPackageJsonUp()` (come OMO-slim)
 
 **Nota**: OpenCode TUI supporta solo UN toast alla volta (l'ultimo sovrascrive).
+
+---
+
+## Meta-Command Detection (v1.2.0-rc.0+)
+
+**Problema:** Loop infinito quando si chiede di cancellare una memoria usando il suo pattern (es. "ho capito che..."). La richiesta veniva salvata come nuova memoria.
+
+**Soluzione:** Pattern `MEMORY_COMMAND_PATTERNS` che rilevano comandi diretti al sistema memoria.
+
+| Pattern | Azione |
+|---------|--------|
+| "cancelliamo questa memoria: ho capito X" | **BLOCK** - comando al sistema |
+| "ho imparato come cancellare file" | **ALLOW** - no keyword "memoria" |
+| "ricordati di eliminare i log" | **ALLOW** - override esplicito |
+
+**File:** `src/memory/negative-patterns.ts`
+- `MEMORY_COMMAND_PATTERNS` - Blocca comandi tipo "delete this memory"
+- `MEMORY_COMMAND_OVERRIDES` - Permette "remember to delete..."
+- `isMemoryMetaCommand()` - Logica di rilevamento
+- Supporto multilingue (9 lingue): IT, EN, ES, FR, DE, PT, NL, PL, TR
 
 ---
 

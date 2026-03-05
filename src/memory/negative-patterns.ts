@@ -229,6 +229,93 @@ export const FIRST_PERSON_RECALL_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Memory Command Patterns (Meta-Command Detection)
+ *
+ * These patterns detect when the user is issuing a COMMAND TO the memory system
+ * (meta-commands) rather than making a statement FOR storage.
+ *
+ * "Delete this memory: I learned X" → COMMAND to memory system → DON'T store
+ * "I learned how to delete files" → statement about deletion → STORE
+ * "Remember to delete the logs" → explicit override → STORE
+ *
+ * Rationale: Commands directed at the memory system (delete/update/forget memories)
+ * should be executed, not stored. Prevents infinite loops where a deletion command
+ * creates a new memory containing the command text.
+ *
+ * EXCEPTION: If the text contains an explicit override like "remember to delete...",
+ * it should be stored as a task/reminder.
+ */
+export const MEMORY_COMMAND_PATTERNS: RegExp[] = [
+  // Italian - commands targeting memory system
+  /\b(cancell|elimin|rimuov|dimentic|aggiorn)\w*\s+(questa|la|queste|le)\s+memor/i,
+  /\b(cancell|elimin|rimuov|dimentic|aggiorn)\s+(questo|il|questi|i)\s+ricord/i,
+
+  // English - commands targeting memory system
+  /\b(delet|remov|forget|updat|clear|eras)\w*\s+(this|the|these|those)\s+memor/i,
+  /\b(delet|remov|clear|eras)\w*\s+(this|the|these|those)\s+recollection/i,
+
+  // Spanish - commands targeting memory system
+  /\b(borr|elimin|remov|olvid|actualiz)\w*\s+(esta|la|estas|las)\s+memor/i,
+  /\b(borr|elimin|remov)\w*\s+(este|el|estos|los)\s+recuerd/i,
+
+  // French - commands targeting memory system
+  /\b(supprim|effac|effac|oubli|met\s+a\s+jour)\w*\s+(cette|la|ces|les)\s+m[eé]moir/i,
+
+  // German - commands targeting memory system
+  /\b(l[oö]sch|entfern|vergess|aktualisier)\w*\s+(diese|die|dieser|der)\s+(erinnerung|speicherung)/i,
+
+  // Portuguese - commands targeting memory system
+  /\b(apag|delet|elimin|remov|esquec|atualiz)\w*\s+(esta|a|estas|as)\s+mem[oó]ri/i,
+
+  // Dutch - commands targeting memory system
+  /\b(verwijder|wis|vergeet|update)\w*\s+(deze|de|dit|het)\s+(herinnering|geheugen)/i,
+
+  // Polish - commands targeting memory system
+  /\b(usu[nń]|wyma[zż]|zapomnij|aktualizuj)\w*\s+(t[eę]|t[aą]|te|tych)\s+pami[eę][ćc]/i,
+
+  // Turkish - commands targeting memory system
+  /\b(sil|kald[iı]r|unut|g[uü]ncelle)\w*\s+(bu|şu|bunlar|şunlar)\s+an[iı]/i,
+];
+
+/**
+ * Explicit Override Patterns
+ *
+ * These patterns indicate the user explicitly wants to store a command
+ * as a task or reminder, despite it containing deletion/update keywords.
+ *
+ * "Ricordati di cancellare i log" → STORE as task
+ * "Remember to delete the temp files" → STORE as reminder
+ */
+export const MEMORY_COMMAND_OVERRIDES: RegExp[] = [
+  // Italian - explicit storage overrides
+  /\b(ricordati|ricorda|ricordare)\s+(di\s+)?(cancell|elimin|rimuov|dimentic|aggiorn)/i,
+
+  // English - explicit storage overrides
+  /\b(remember|remind\s+me)\s+(to\s+)?(delet|remov|forget|updat|clear|eras)/i,
+
+  // Spanish - explicit storage overrides
+  /\b(recuerda|recu[eé]rdame)\s+(de\s+)?(borr|elimin|remov|olvid|actualiz)/i,
+
+  // French - explicit storage overrides
+  /\b(souviens|rappele)\s*-?\s*(moi)?\s+(de\s+)?(supprim|effac|oubli|mettre)/i,
+
+  // German - explicit storage overrides
+  /\b(erinnere|erinnere\s+mich)\s+(daran\s+)?(zu\s+)?(l[oö]schen|entfernen|vergessen)/i,
+
+  // Portuguese - explicit storage overrides
+  /\b(lembre|lembre\s*-?\s*me)\s+(de\s+)?(apag|delet|elimin|remov|esquec|atualiz)/i,
+
+  // Dutch - explicit storage overrides
+  /\b(herinner|herinner\s+me)\s+(eraan\s+)?(om\s+te\s+)?(verwijderen|wissen)/i,
+
+  // Polish - explicit storage overrides
+  /\b(przypomnij|przypomnij\s+mi)\s+(o\s+)?(usuni[eę]ciu|wyamazaniu)/i,
+
+  // Turkish - explicit storage overrides
+  /\b(hat[iı]rlat|hat[iı]rlat\s+bana)\s+(silmeyi|kald[iı]rmay[iı]|unutmay[iı])/i,
+];
+
+/**
  * Remind Recall Patterns
  *
  * These patterns detect when "remind me" is used to request INFORMATION
@@ -302,6 +389,29 @@ export const NEGATIVE_PATTERNS: Record<string, RegExp[]> = {
 };
 
 /**
+ * Check if text is a meta-command directed at the memory system
+ * Commands like "delete this memory" should be executed, not stored
+ * unless there's an explicit override like "remember to delete..."
+ */
+export function isMemoryMetaCommand(text: string): boolean {
+  // Check if text contains memory command patterns
+  const hasCommand = MEMORY_COMMAND_PATTERNS.some(pattern => pattern.test(text));
+
+  if (!hasCommand) {
+    return false; // No command pattern found
+  }
+
+  // Check for explicit override (user wants to store it as a task/reminder)
+  const hasOverride = MEMORY_COMMAND_OVERRIDES.some(pattern => pattern.test(text));
+
+  if (hasOverride) {
+    return false; // Explicit override: "ricordati di cancellare" → allow storage
+  }
+
+  return true; // Command without override: "cancelliamo questa memoria" → block
+}
+
+/**
  * Check if text matches any negative pattern for the given classification
  * Also checks AI meta-talk patterns first (applies to all classifications)
  */
@@ -323,6 +433,12 @@ export function matchesNegativePattern(text: string, classification: string): bo
 
   // Check for "remind me [question word]" patterns (recall request, not storage)
   if (REMIND_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
+    return true;
+  }
+
+  // Check for meta-commands directed at memory system (e.g., "delete this memory")
+  // These should be executed, not stored
+  if (isMemoryMetaCommand(text)) {
     return true;
   }
 
@@ -362,6 +478,15 @@ export function getMatchingNegativePatterns(text: string, classification: string
   // Check "remind me [question word]" patterns
   if (REMIND_RECALL_PATTERNS.some(pattern => pattern.test(text))) {
     matches.push('[REMIND_RECALL]');
+  }
+
+  // Check memory command patterns (meta-commands)
+  if (MEMORY_COMMAND_PATTERNS.some(pattern => pattern.test(text))) {
+    matches.push('[MEMORY_COMMAND]');
+    // Check if it has an override
+    if (MEMORY_COMMAND_OVERRIDES.some(pattern => pattern.test(text))) {
+      matches.push('[MEMORY_COMMAND_OVERRIDE - allowing storage]');
+    }
   }
 
   const patterns = NEGATIVE_PATTERNS[classification];
