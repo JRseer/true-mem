@@ -3,7 +3,20 @@
  */
 
 import { log } from './logger.js';
-import type { PsychMemConfig, ScoringWeights, OpenCodeConfig, SweepConfig } from './types.js';
+import type { PsychMemConfig, ScoringWeights, OpenCodeConfig, SweepConfig, ScopeQuotas } from './types.js';
+
+/**
+ * Compute scope quotas based on max memories
+ */
+export function getScopeQuotas(maxMemories: number): ScopeQuotas {
+  const minGlobal = Math.floor(maxMemories * 0.3);
+  const minProject = Math.floor(maxMemories * 0.3);
+  return {
+    minGlobal,
+    minProject,
+    maxFlexible: maxMemories - minGlobal - minProject,
+  };
+}
 
 /**
  * Get max memories from environment variable with validation
@@ -84,14 +97,8 @@ export const DEFAULT_CONFIG: PsychMemConfig = {
   maxMemories: getMaxMemories(),
   maxTokensForMemories: 4000,
 
-  get scopeQuotas() {
-    const max = this.maxMemories;
-    return {
-      minGlobal: Math.floor(max * 0.3),
-      minProject: Math.floor(max * 0.3),
-      maxFlexible: max - Math.floor(max * 0.3) - Math.floor(max * 0.3),
-    };
-  },
+  // Scope quotas computed at initialization
+  scopeQuotas: getScopeQuotas(getMaxMemories()),
 
   // Auto-promote to LTM
   autoPromoteToLtm: ['learning', 'decision'],

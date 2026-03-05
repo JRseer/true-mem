@@ -647,9 +647,13 @@ export class MemoryDatabase {
       ? queryTextOrEmbedding
       : (queryTextOrEmbedding.length === 0 ? '' : ''); // If embedding is empty, use empty query
 
-    // Return empty array for empty queries to avoid random results with similarity 0
+    // Fallback: return top memories by strength when query is empty
     if (queryText.trim().length === 0) {
-      return [];
+      log('vectorSearch: Empty query, falling back to strength-sorted memories');
+      const allMemories = this.getMemoriesByScope(currentProject, limit * 2);
+      return allMemories
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, limit);
     }
 
     // Fetch all active memories for the current scope (same logic as getMemoriesByScope)
