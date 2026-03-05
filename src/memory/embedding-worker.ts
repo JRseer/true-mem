@@ -66,7 +66,7 @@ parentPort?.on('message', async (msg) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
+const gracefulShutdown = async () => {
   // FIX P1: Clear interval to prevent leak
   if (memoryCheckInterval) {
     clearInterval(memoryCheckInterval);
@@ -84,7 +84,11 @@ process.on('SIGTERM', async () => {
   
   parentPort?.postMessage({ type: 'shutdown' });
   process.exit(0);
-});
+};
+
+process.on('SIGTERM', gracefulShutdown);
+// FIX CRITICAL: Add SIGINT handler for Ctrl+C and force-kill scenarios
+process.on('SIGINT', gracefulShutdown);
 
 // Memory monitoring
 memoryCheckInterval = setInterval(() => { // FIX P1: Save interval reference

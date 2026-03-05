@@ -426,7 +426,8 @@ export class MemoryDatabase {
     if (similarMemories.length > 0) {
       const existingMemory = similarMemories[0];
       if (existingMemory) {
-        const similarity = this.jaccardSimilarity(summary, existingMemory.summary);
+        // FIX CRITICAL: Use getSimilarity for consistent hybrid similarity (Jaccard + cosine)
+        const similarity = await getSimilarity(summary, existingMemory.summary);
 
         if (isRelevant(similarity)) {
           // Call reconsolidation logic
