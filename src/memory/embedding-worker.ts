@@ -5,6 +5,24 @@
  */
 
 import { parentPort, workerData } from 'worker_threads';
+import { appendFileSync, existsSync, mkdirSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
+// Local log function that writes to the same log file as the main thread
+const LOG_DIR = join(homedir(), '.true-mem');
+const LOG_FILE = join(LOG_DIR, 'plugin-debug.log');
+
+function log(message: string, data?: unknown): void {
+  try {
+    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
+    const timestamp = new Date().toISOString();
+    const entry = `[${timestamp}] [worker] ${message}${data ? ' ' + JSON.stringify(data) : ''}\n`;
+    appendFileSync(LOG_FILE, entry);
+  } catch {
+    // Silently ignore logging errors
+  }
+}
 
 // FIX: Use dynamic import via eval to avoid bun bundling issues with native .node modules
 let pipeline: any;
@@ -105,10 +123,6 @@ memoryCheckInterval = setInterval(() => { // FIX P1: Save interval reference
   }
 }, 5000); // Check every 5 seconds
 
-// Simple log function - send to parent instead of stdout to avoid TUI pollution
-function log(...args: any[]) {
-  const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-  parentPort?.postMessage({ type: 'log', message: `[embedding-worker] ${message}` });
-}
+
 
 initialize();
