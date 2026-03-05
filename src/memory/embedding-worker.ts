@@ -74,11 +74,11 @@ parentPort?.on('message', async (msg) => {
 
       const embeddings = await extractor(msg.texts, { pooling: 'mean', normalize: true });
       
-      // Convert to regular arrays for message passing
+      // Convert to regular arrays for message passing, include requestId for correlation
       const embeddingsArray = Array.from(embeddings).map((e: any) => Array.from(e));
-      parentPort?.postMessage({ type: 'embeddings', embeddings: embeddingsArray });
+      parentPort?.postMessage({ type: 'embeddings', requestId: msg.requestId, embeddings: embeddingsArray });
     } catch (error) {
-      parentPort?.postMessage({ type: 'error', error: String(error) });
+      parentPort?.postMessage({ type: 'error', requestId: msg.requestId, error: String(error) });
     }
   }
   

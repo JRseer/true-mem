@@ -48,6 +48,9 @@ export class EmbeddingService {
   private readyResolve: ((value: boolean) => void) | null = null;
   private readyPromise: Promise<boolean> | null = null;
 
+  // Single listener pattern: Map of pending requests with their resolve/reject callbacks
+  private pendingRequests = new Map<string, { resolve: (value: number[][]) => void; reject: (reason?: any) => void; timeout: ReturnType<typeof setTimeout> }>();
+
   // Circuit breaker: disable after 3 failures in 5 minutes
   private readonly CIRCUIT_BREAKER_THRESHOLD = 3;
   private readonly CIRCUIT_BREAKER_WINDOW = 5 * 60 * 1000; // 5 minutes
@@ -89,16 +92,37 @@ export class EmbeddingService {
       this.worker = new Worker(workerPath, {
         workerData: { model: 'Xenova/all-MiniLM-L6-v2' }
       });
+      
+      // FIX: Remove max listeners limit to prevent warnings with many parallel calls
+      this.worker.setMaxListeners(0);
 
-      // Handle worker messages
+      // Single message listener for ALL responses (fixes MaxListenersExceededWarning)
       this.worker.on('message', (msg) => {
-        if (msg.type === 'ready') {
+        if (msg.type === 'embeddings' && msg.requestId) {
+          // Handle embedding response
+          const pending = this.pendingRequests.get(msg.requestId);
+          if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(msg.requestId);
+            pending.resolve(msg.embeddings);
+          }
+        } else if (msg.type === 'error' && msg.requestId) {
+          // Handle error response for specific request
+          const pending = this.pendingRequests.get(msg.requestId);
+          if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(msg.requestId);
+            this.recordFailure();
+            pending.reject(new Error(msg.error));
+          }
+        } else if (msg.type === 'ready') {
           log('Embedding worker ready');
           this.ready = true;
           if (this.readyResolve) {
             this.readyResolve(true);
           }
-        } else if (msg.type === 'error') {
+        } else if (msg.type === 'error' && !msg.requestId) {
+          // Handle worker-level errors (not specific to a request)
           log('Embedding worker error:', msg.error);
           this.recordFailure();
         } else if (msg.type === 'log') {
@@ -157,28 +181,20 @@ export class EmbeddingService {
     }
 
     try {
+      const requestId = crypto.randomUUID();
+      
       return new Promise((resolve, reject) => {
+        // Set timeout for this request
         const timeout = setTimeout(() => {
-          // FIX P1: Remove handler on timeout to prevent leak
-          this.worker?.off('message', messageHandler);
-          reject(new Error('Embedding timeout'));
+          this.pendingRequests.delete(requestId);
+          reject(new Error('Embedding request timeout'));
         }, 5000); // 5 second timeout
 
-        const messageHandler = (msg: any) => {
-          if (msg.type === 'embeddings') {
-            clearTimeout(timeout);
-            this.worker?.off('message', messageHandler);
-            resolve(msg.embeddings);
-          } else if (msg.type === 'error') {
-            clearTimeout(timeout);
-            this.worker?.off('message', messageHandler);
-            this.recordFailure();
-            reject(new Error(msg.error));
-          }
-        };
+        // Store pending request with resolve/reject callbacks
+        this.pendingRequests.set(requestId, { resolve, reject, timeout });
 
-        this.worker!.on('message', messageHandler);
-        this.worker!.postMessage({ type: 'embed', texts });
+        // Send request with requestId for correlation
+        this.worker!.postMessage({ type: 'embed', requestId, texts });
       });
     } catch (error) {
       log('Embedding computation failed:', error);
@@ -216,6 +232,13 @@ export class EmbeddingService {
   }
 
   cleanup(): void {
+    // Clear all pending requests to prevent memory leaks
+    for (const [requestId, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Service cleanup'));
+    }
+    this.pendingRequests.clear();
+
     if (this.worker) {
       // FIX CRITICAL: Graceful shutdown via message instead of immediate terminate()
       // This prevents Bun panic when worker is executing native ONNX code
