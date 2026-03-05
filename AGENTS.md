@@ -35,13 +35,33 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | `main` | Produzione (Jaccard only) | Stable v1.1.1 |
 | `NLP` | **Esperimento NLP** - Transformers.js v4 + embeddings ibridi | Testing locale |
 
-**Esperimento NLP:**
+**Esperimento NLP (Branch `NLP`):**
 - Branch isolato per testare embeddings semantici
-- Architettura ibrida: Jaccard (baseline) + Transformers.js (opzionale)
-- Feature flag: `TRUE_MEM_EMBEDDINGS=1`
+- Architettura ibrida: Jaccard (baseline) + Transformers.js v4 (opzionale)
+- Feature flag: `TRUE_MEM_EMBEDDINGS=1` (unset/disabled = Jaccard-only)
 - Documentazione: `docs/nlp-embeddings-analysis.md`
 - **NON per rilascio** - Solo test locali
-- Rischi: Crash all'uscita, memory leaks (noti da v3)
+
+**Fix Applicati su NLP:**
+1. **Hybrid similarity consistency:** `database.ts:429` ora usa `getSimilarity()` invece di `jaccardSimilarity()` per reconsolidation
+2. **SIGINT handler:** Aggiunto handler per Ctrl+C nel worker thread
+3. **Graceful shutdown:** Worker cleanup via messaggio + timeout (2s) prima di force terminate
+
+**Problemi Noti (NLP Branch):**
+- ⚠️ **Bun panic alla chiusura di OpenCode** - Crash C++ exception visibile nel terminale (stesso problema della versione precedente)
+- ⚠️ Embeddings usate solo in `tool.execute.before`, non nel retrieval globale delle memorie
+- ⚠️ Non testato in produzione
+
+**Workflow Raccomandato:**
+```bash
+# Usa NLP branch ma con Jaccard-only (comportamento = main)
+git checkout NLP
+export TRUE_MEM_EMBEDDINGS=0  # o non settare
+bun run build
+
+# Per testare embeddings (sperimentale, rischio crash)
+export TRUE_MEM_EMBEDDINGS=1
+```
 
 **Implementazione:**
 
