@@ -51,6 +51,8 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 4. **SIGINT handler:** Aggiunto handler per Ctrl+C nel worker thread
 5. **Graceful shutdown:** Worker cleanup via messaggio + timeout (2s) prima di force terminate
 6. **Env check fix:** `TRUE_MEM_EMBEDDINGS` deve essere esplicitamente `'1'` per attivare embeddings
+7. **Node.js Worker Solution:** Implementata soluzione ibrida Bun+Node.js per evitare Bun panic crash
+8. **Oracle Review Fixes:** Addressati tutti i problemi critici identificati da Oracle (Node.js check, busy-wait, pending cleanup, multiple ready guard)
 
 **Problemi Noti (develop branch):**
 - ✅ **Bun panic risolto** - Implementata soluzione Node.js Worker (ONNX stabile)
