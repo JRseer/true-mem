@@ -662,11 +662,13 @@ async function processSessionIdle(
             }
 
             // Determine store: STM vs LTM
-            // - Explicit intent (confidence >= 0.85) → LTM (user explicitly said "remember this")
+            // - Episodic memories ALWAYS go to STM (they decay by nature, 7-day half-life)
+            // - Explicit intent (confidence >= 0.85) → LTM for non-episodic (user explicitly said "remember this")
             // - Auto-promote classifications → LTM (learning, decision)
             // - Everything else → STM
             const autoPromoteClassifications = ['learning', 'decision'];
-            const shouldPromoteToLtm = isExplicitIntent || autoPromoteClassifications.includes(classification);
+            const shouldPromoteToLtm = classification !== 'episodic' &&
+              (isExplicitIntent || autoPromoteClassifications.includes(classification));
             const store = shouldPromoteToLtm ? 'ltm' : 'stm';
 
             // Store memory (no embeddings - using Jaccard similarity)

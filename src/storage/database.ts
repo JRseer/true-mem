@@ -797,10 +797,13 @@ export class MemoryDatabase {
 
     for (const mem of stmMemories) {
       const memory = this.rowToMemoryUnit(mem);
+      // NEVER promote episodic to LTM - they're temporal by nature (7-day decay)
       const shouldPromote =
-        memory.strength >= this.config.stmToLtmStrengthThreshold ||
-        memory.frequency >= this.config.stmToLtmFrequencyThreshold ||
-        this.config.autoPromoteToLtm.includes(memory.classification);
+        memory.classification !== 'episodic' && (
+          memory.strength >= this.config.stmToLtmStrengthThreshold ||
+          memory.frequency >= this.config.stmToLtmFrequencyThreshold ||
+          this.config.autoPromoteToLtm.includes(memory.classification)
+        );
 
       if (shouldPromote) {
         this.promoteToLtm(memory.id);
