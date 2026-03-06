@@ -108,7 +108,7 @@ export class EmbeddingService {
       this.initResolve = resolve;
     });
 
-    // Schedule initialization after 2 second debounce
+    // Schedule initialization after 1 second debounce
     this.pendingInit = setTimeout(async () => {
       this.pendingInit = null;
       const result = await this._doInitialize(getNodePath);
@@ -116,7 +116,7 @@ export class EmbeddingService {
         this.initResolve(result);
         this.initResolve = null;
       }
-    }, 2000);
+    }, 1000);
 
     // Wait for debounced initialization to complete
     return debouncePromise;
