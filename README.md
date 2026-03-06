@@ -14,6 +14,7 @@
 - [Architecture](#architecture)
 - [Memory Classifications](#memory-classifications)
 - [Technical Details](#technical-details)
+- [Experimental: NLP Embeddings](#experimental-nlp-embeddings)
 - [Contributing](#contributing)
 - [Debug](#debug)
 
@@ -304,6 +305,71 @@ Want to contribute or test your own changes? Here's how:
 5. **Make your changes**, rebuild with `bun run build`, and test.
 
 6. **Submit a PR** when ready!
+
+---
+
+## Experimental: NLP Embeddings
+
+True-Mem includes an **experimental** NLP embeddings feature that provides semantic similarity search beyond basic Jaccard matching.
+
+### What It Does
+
+When enabled, True-Mem uses a lightweight transformer model (all-MiniLM-L6-v2) to generate 384-dimensional embeddings for each memory. This enables:
+
+- **Semantic retrieval** - Find memories by meaning, not just keyword matching
+- **Better relevance** - Understands that "I like TypeScript" relates to "JavaScript preferences"
+- **Cross-lingual support** - Works across the 15 supported languages
+
+### How It Works
+
+**Architecture:**
+```
+Main Thread (Bun) → Node.js Worker Process → Transformers.js v4 → ONNX Runtime
+```
+
+The plugin spawns a separate Node.js process to run the transformer model in isolation, ensuring Bun stability. The model is automatically downloaded on first use and cached locally.
+
+**Trade-offs:**
+- **Storage**: ~23MB for cached model (downloaded once to `~/.true-mem/models/`)
+- **Memory**: ~200MB RAM when worker is active (during embedding generation)
+- **Init time**: 2-3 seconds on first use (model loading)
+- **Hot-reload resilient**: Debounce (1s) prevents spawn thrashing
+
+### Enabling Embeddings
+
+Set the environment variable before starting OpenCode:
+
+```bash
+export TRUE_MEM_EMBEDDINGS=1
+opencode
+```
+
+To disable (use Jaccard-only mode):
+
+```bash
+export TRUE_MEM_EMBEDDINGS=0  # or unset
+opencode
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRUE_MEM_EMBEDDINGS` | `0` (disabled) | Enable/disable NLP embeddings (`1` = enabled) |
+| `TRUE_MEM_MAX_MEMORIES` | `20` | Max memories to inject in prompt |
+
+### Status
+
+**Experimental** - The feature works well but is still being tested. The Jaccard-only mode (default) is production-stable. When embeddings are enabled, the system gracefully falls back to Jaccard if the worker fails (circuit breaker: 3 failures / 5 minutes).
+
+### Debug
+
+Check if embeddings are active:
+
+```bash
+# Look for "Mode: Hybrid (Jaccard + NLP Embeddings)" in logs
+tail -f ~/.true-mem/plugin-debug.log | grep "Mode:"
+```
 
 ---
 
