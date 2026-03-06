@@ -10,6 +10,7 @@
  */
 
 import type { ImportanceSignal, ImportanceSignalType } from '../types.js';
+import * as os from 'os';
 
 // =============================================================================
 // Pattern Category Types
@@ -690,6 +691,154 @@ export function hasGlobalScopeKeyword(text: string): boolean {
   return GLOBAL_SCOPE_KEYWORDS.latin.some(keyword =>
     lowerText.includes(keyword.toLowerCase())
   );
+}
+
+// =============================================================================
+// Contextual Scope Detection (NEW)
+// Detects if a memory should be project-scoped based on conversation context
+// =============================================================================
+
+// Signal weights for project scope detection
+const PROJECT_SIGNAL_WEIGHTS = {
+  PROJECT_PATH_MENTIONED: 0.4,      // Full project path appears in conversation
+  PROJECT_TERM_MATCH: 0.3,          // Each project term match
+  EXPLICIT_PROJECT_CONTEXT: 0.3,    // Phrases like "in this project"
+  FILE_REFERENCE: 0.1,               // Each file reference (.ts, .js, etc.)
+} as const;
+
+// Threshold for determining project scope (0-1 scale)
+const PROJECT_SCOPE_THRESHOLD = 0.4;
+
+// Stop words to filter out from project names
+const PROJECT_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'src', 'dist', 'node', 'modules',
+  'lib', 'bin', 'test', 'tests', 'docs', 'doc', 'config', 'build', 
+  'public', 'app', 'core', 'utils', 'util', 'common', 'shared', 'src'
+]);
+
+export interface ConversationContext {
+  recentMessages: string[];
+  worktree: string;
+  projectTerms: string[];
+}
+
+/**
+ * Extract project-specific terms from worktree path
+ * e.g., "/Users/.../oh-my-opencode-slim" → ["oh-my-opencode-slim", "opencode", "slim"]
+ */
+export function extractProjectTerms(worktree: string): string[] {
+  // FIX: Check for home directory edge case
+  const homeDir = os.homedir();
+  if (worktree === homeDir || worktree === '/') {
+    return []; // Home directory is not a project
+  }
+  
+  const parts = worktree.split('/');
+  const projectName = parts[parts.length - 1];
+  
+  if (!projectName || projectName.startsWith('unknown-project')) {
+    return [];
+  }
+  
+  // FIX: Use expanded stop words list
+  return projectName
+    .split(/[-_.]/)
+    .map(part => part.toLowerCase())
+    .filter(part => part.length > 2)
+    .filter(part => !PROJECT_STOP_WORDS.has(part));
+}
+
+/**
+ * Detect if conversation context indicates project-specific discussion
+ * Returns score 0-1 where higher means more likely project-specific
+ */
+export function detectProjectSignals(context: ConversationContext): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+  const recentText = context.recentMessages.join(' ').toLowerCase();
+  
+  // FIX: Signal 1: File paths in project directory (cross-platform)
+  const projectPath = context.worktree.toLowerCase();
+  const homeDir = os.homedir().toLowerCase();
+  // Support both full path and tilde-expanded path
+  const tildePath = projectPath.replace(homeDir, '~');
+  if (recentText.includes(projectPath) || recentText.includes(tildePath)) {
+    score += PROJECT_SIGNAL_WEIGHTS.PROJECT_PATH_MENTIONED;
+    reasons.push('project_path_mentioned');
+  }
+  
+  // FIX: Signal 2: Project-specific terms (use pre-computed terms from context)
+  const termMatches = context.projectTerms.filter(term => recentText.includes(term));
+  if (termMatches.length > 0) {
+    score += Math.min(PROJECT_SIGNAL_WEIGHTS.PROJECT_TERM_MATCH * termMatches.length, 0.5);
+    reasons.push(`project_terms: ${termMatches.join(', ')}`);
+  }
+  
+  // Signal 3: Explicit project context phrases
+  const projectPhrases = [
+    /in (this |the )?project/i,
+    /nel(l)? (progetto|mio progetto)/i,
+    /here in/i,
+    /in this (session|conversation|chat)/i,
+    /per (questo |il )?progetto/i,
+    /for (this |the )?project/i,
+  ];
+  if (projectPhrases.some(p => p.test(recentText))) {
+    score += PROJECT_SIGNAL_WEIGHTS.EXPLICIT_PROJECT_CONTEXT;
+    reasons.push('explicit_project_context');
+  }
+  
+  // FIX: Signal 4: Technical terms specific to this codebase
+  // Improved regex to avoid matching URLs and require path-like context
+  const fileReferences = recentText.match(/(?:^|[\s"'/])[A-Za-z_-]+\.(ts|js|json|md|py)\b/g);
+  if (fileReferences && fileReferences.length > 0) {
+    score += Math.min(PROJECT_SIGNAL_WEIGHTS.FILE_REFERENCE * fileReferences.length, 0.3);
+    reasons.push(`file_refs: ${fileReferences.slice(0, 3).join(', ')}`);
+  }
+  
+  return { score: Math.min(score, 1.0), reasons };
+}
+
+/**
+ * Determine if a user-level memory (preference, constraint, etc.) should be project-scoped
+ * based on conversation context
+ */
+export function shouldBeProjectScope(
+  memoryText: string,
+  context: ConversationContext,
+  hasGlobalKeyword: boolean
+): { isProjectScope: boolean; confidence: number; reason: string } {
+  // If explicit global keyword, respect it
+  if (hasGlobalKeyword) {
+    return { isProjectScope: false, confidence: 0.9, reason: 'explicit_global_keyword' };
+  }
+  
+  // Detect project signals in context
+  const signals = detectProjectSignals(context);
+  
+  // FIX: Use documented threshold constant for project scope
+  if (signals.score >= PROJECT_SCOPE_THRESHOLD) {
+    return { 
+      isProjectScope: true, 
+      confidence: signals.score, 
+      reason: `project_signals: ${signals.reasons.join(', ')}` 
+    };
+  }
+  
+  // FIX: Also check if memory text itself contains project-specific references
+  // Use pre-computed terms from context instead of re-extracting
+  const textLower = memoryText.toLowerCase();
+  const directMatches = context.projectTerms.filter(term => textLower.includes(term));
+  if (directMatches.length > 0) {
+    return {
+      isProjectScope: true,
+      confidence: 0.6,
+      reason: `direct_project_ref: ${directMatches.join(', ')}`
+    };
+  }
+  
+  // Default: user-level memories without signals go to global (safer for user preferences)
+  return { isProjectScope: false, confidence: 0.5, reason: 'default_user_level_global' };
 }
 
 // =============================================================================

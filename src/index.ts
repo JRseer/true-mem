@@ -13,6 +13,8 @@ import type { PluginInput } from '@opencode-ai/plugin';
 import { log } from './logger.js';
 import { getVersion } from './utils/version.js';
 import { showToast } from './utils/toast.js';
+import { EmbeddingService } from './memory/embeddings-nlp.js';
+import { getEmbeddingsEnabled } from './config/feature-flags.js';
 
 // Singleton state - shared across all hook calls
 let state: {
@@ -46,6 +48,24 @@ const TrueMemory: Plugin = async (ctx) => {
     }, 2000);
   }
 
+  // FIX: Detect hot-reload and reset state
+  // After hot-reload, state persists but we need fresh initialization
+  if (state.initialized || state.initializingLock) {
+    const previousState = {
+      initialized: state.initialized,
+      initializingLock: state.initializingLock,
+      hasInitPromise: !!state.initPromise,
+      hasRealHooks: !!state.realHooks
+    };
+    
+    log('Hot-reload detected, resetting state', previousState);
+    
+    state.initialized = false;
+    state.initializingLock = false;
+    state.initPromise = null;
+    state.realHooks = null;
+  }
+
   // Start initialization IMMEDIATELY but DON'T await
   // Use lock to prevent concurrent initialization
   if (!state.initializingLock) {
@@ -65,6 +85,22 @@ const TrueMemory: Plugin = async (ctx) => {
         const { createTrueMemoryPlugin } = await import('./adapters/opencode/index.js');
         state.realHooks = await createTrueMemoryPlugin(state.ctx);
         state.initialized = true;
+
+        // Initialize NLP embeddings if feature flag is enabled
+        const embeddingsEnabled = getEmbeddingsEnabled();
+        
+        if (embeddingsEnabled) {
+          log('Embeddings enabled, initializing...');
+          const embeddingService = EmbeddingService.getInstance();
+          const initialized = await embeddingService.initialize();
+          if (initialized) {
+            log('NLP embeddings enabled');
+          } else {
+            log('NLP embeddings failed to initialize, using Jaccard only');
+          }
+        } else {
+          log('Embeddings disabled');
+        }
 
         log('Phase 1 complete - Plugin ready');
       } catch (error) {

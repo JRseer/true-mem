@@ -15,13 +15,14 @@ import {
   classifyWithRoleAwareness,
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
-import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest } from '../../memory/patterns.js';
+import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest, detectProjectSignals, extractProjectTerms, shouldBeProjectScope } from '../../memory/patterns.js';
 import { setLastInjectedMemories, getLastInjectedMemories } from '../../state.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
-import { getAtomicMemories, wrapMemories, type InjectionState } from './injection.js';
+import { getAtomicMemories, wrapMemories, selectMemoriesForInjection, type InjectionState } from './injection.js';
 import { getVersion } from '../../utils/version.js';
+import { EmbeddingService } from '../../memory/embeddings-nlp.js';
 
 // Debounce state for message.updated events
 let messageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -30,6 +31,87 @@ let pendingMessageEvent: { properties: unknown } | null = null;
 // Global extraction debounce to prevent rapid-fire duplicate extractions
 let lastExtractionTime = 0;
 const MIN_EXTRACTION_INTERVAL = 2000; // 2 seconds minimum between extractions
+
+// Cache for context extraction (avoid repeated API calls)
+const contextCache = new Map<string, { context: string; timestamp: number }>();
+const CACHE_TTL = 5000; // 5 seconds
+
+// Persist worktree across plugin restarts (OpenCode lifecycle issue)
+// Using file-based persistence because module-level variables don't survive plugin reloads
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+const WORKTREE_CACHE_FILE = join(homedir(), '.true-mem', '.worktree-cache');
+
+function getPersistedWorktree(): string | null {
+  try {
+    if (existsSync(WORKTREE_CACHE_FILE)) {
+      const cached = readFileSync(WORKTREE_CACHE_FILE, 'utf-8').trim();
+      if (cached && cached !== '/' && cached !== '\\' && cached.length > 0) {
+        return cached;
+      }
+    }
+  } catch (err) {
+    // Silently ignore - will use ctx values instead
+  }
+  return null;
+}
+
+function setPersistedWorktree(worktree: string): void {
+  try {
+    writeFileSync(WORKTREE_CACHE_FILE, worktree, 'utf-8');
+  } catch (err) {
+    // Silently ignore - non-critical feature
+  }
+}
+
+/**
+ * Extract query context from conversation messages with caching
+ * Used for semantic memory retrieval when embeddings are enabled
+ */
+async function extractQueryContextFromInput(
+  client: PluginInput['client'],
+  sessionId: string | undefined
+): Promise<string> {
+  if (!sessionId) return '';
+  
+  // Check cache
+  const cached = contextCache.get(sessionId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    log('Using cached context');
+    return cached.context;
+  }
+  
+  try {
+    // Use the same API as processSessionIdle
+    const response = await client.session.messages({ path: { id: sessionId } });
+    if (response.error || !response.data) return '';
+    
+    const messages = response.data;
+    const recentMessages = messages.slice(-5); // Last 5 messages
+    
+    const contextParts: string[] = [];
+    for (const msg of recentMessages) {
+      for (const part of msg.parts) {
+        if (part.type === 'text' && 'text' in part) {
+          contextParts.push((part as { text: string }).text);
+        }
+      }
+    }
+    
+    const fullContext = contextParts.join(' | ');
+    const truncatedContext = fullContext.slice(-500); // Truncate to 500 chars
+    
+    // Update cache
+    contextCache.set(sessionId, { context: truncatedContext, timestamp: Date.now() });
+    
+    return truncatedContext;
+  } catch (error) {
+    log('Failed to extract query context:', error);
+    return '';
+  }
+}
 
 /**
  * Check if enough time has passed since last extraction
@@ -118,15 +200,36 @@ export async function createTrueMemoryPlugin(
   // Register shutdown handler for database
   registerShutdownHandler('database', () => db.close());
 
+  // Register shutdown handler for embeddings
+  registerShutdownHandler('embeddings', () => {
+    const embeddingService = EmbeddingService.getInstance();
+    embeddingService.cleanup();
+  });
+
   // Resolve project root with explicit validation
   // P3-1: Prevent falling back to "/" which matches all memories
   const isValidPath = (path: string | undefined): boolean => {
     return !!(path && path !== '/' && path !== '\\' && path.trim().length > 0);
   };
 
-  const worktree = isValidPath(ctx.worktree)
-    ? ctx.worktree
-    : (isValidPath(ctx.directory) ? ctx.directory : `unknown-project-${Date.now()}`);
+  // FIX: Persist worktree across plugin restarts (OpenCode lifecycle)
+  // When server.instance.disposed fires, ctx.worktree becomes undefined on restart
+  // Use file-based persistence because module-level variables don't survive plugin reloads
+  const persistedWorktree = getPersistedWorktree();
+  let worktree: string;
+  
+  if (persistedWorktree && isValidPath(persistedWorktree)) {
+    worktree = persistedWorktree;
+    log(`Worktree restored from cache: ${worktree}`);
+  } else if (isValidPath(ctx.worktree)) {
+    worktree = ctx.worktree;
+    setPersistedWorktree(worktree);
+  } else if (isValidPath(ctx.directory)) {
+    worktree = ctx.directory;
+    setPersistedWorktree(worktree);
+  } else {
+    worktree = `unknown-project-${Date.now()}`;
+  }
   
   const state: TrueMemoryAdapterState = {
     db,
@@ -136,7 +239,7 @@ export async function createTrueMemoryPlugin(
     client: ctx.client,
   };
 
-  log(`True-Mem initialized — worktree=${worktree}`);
+  log(`True-Mem initialized — worktree=${worktree}, maxMemories=${config.maxMemories}`);
 
   // Extract project name and create professional startup message
   const projectName = worktree.split(/[/\\]/).pop() || 'Unknown';
@@ -172,6 +275,13 @@ export async function createTrueMemoryPlugin(
             // Debounce message updates to avoid blocking UI
             debounceMessageUpdate(state, event.properties, handleMessageUpdated);
           }
+          break;
+        case 'server.instance.disposed':
+          // OpenCode is disposing the server instance - persist worktree to file for next init
+          if (state.worktree && !state.worktree.startsWith('unknown-project')) {
+            setPersistedWorktree(state.worktree);
+          }
+          log('Server instance disposed - worktree preserved for next init');
           break;
       }
     },
@@ -281,13 +391,25 @@ export async function createTrueMemoryPlugin(
       log('experimental.chat.system.transform: Injecting all relevant memories');
 
       try {
-        const injectionState: InjectionState = {
-          db: state.db,
-          worktree: state.worktree,
-        };
-
-        // Retrieve ALL relevant memories for current project (both user-level and project-level)
-        const allMemories = injectionState.db.getMemoriesByScope(state.worktree, 20);
+        // Extract context from conversation (convert null to undefined for type safety)
+        const sessionId = input.sessionID ?? state.currentSessionId ?? undefined;
+        const queryContext = await extractQueryContextFromInput(
+          state.client,
+          sessionId
+        );
+        
+        // Check if embeddings are enabled
+        const embeddingsEnabled = process.env.TRUE_MEM_EMBEDDINGS === '1';
+        
+        // Use smart selection instead of getMemoriesByScope
+        const allMemories = await selectMemoriesForInjection(
+          state.db,
+          state.worktree,
+          queryContext,
+          embeddingsEnabled,
+          state.config.maxMemories,
+          state.config.maxTokensForMemories
+        );
 
         // Save to global state for "list memories" feature
         setLastInjectedMemories(allMemories);
@@ -302,7 +424,7 @@ export async function createTrueMemoryPlugin(
 
           output.system = systemArray;
 
-          log(`Global injection: ${allMemories.length} memories injected into system prompt`);
+          log(`Global injection: ${allMemories.length} memories injected into system prompt [embeddings=${embeddingsEnabled}]`);
         }
       } catch (error) {
         log(`Global injection failed: ${error}`);
@@ -501,24 +623,52 @@ async function processSessionIdle(
           const result = shouldStoreMemory(isolatedContent, classification, baseSignalScore);
 
           if (result.store) {
-            // Determine scope
-            // - User-level classifications: global scope (all projects)
+            // Determine scope with contextual awareness
+            // - User-level classifications: check context for project signals
             // - Explicit intent WITH global keyword ("sempre", "ovunque", etc.): global scope
             //   NOTE: Check full text, not isolatedContent, because keywords can be in the marker
-            // - Explicit intent WITHOUT global keyword: project scope
+            // - Explicit intent WITHOUT global keyword: check context
             // - Everything else: project scope
             const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
             const isExplicitIntent = confidence >= 0.85;
             const hasGlobalKeyword = hasGlobalScopeKeyword(text);
-            const isUserLevel = userLevelClassifications.includes(classification) || (isExplicitIntent && hasGlobalKeyword);
-            const scope = isUserLevel ? null : state.worktree;
+            // FIX: Simplified isUserLevel logic - only check classification type
+            // Global keyword check happens inside shouldBeProjectScope()
+            const isUserLevel = userLevelClassifications.includes(classification);
+            
+            // NEW: Contextual scope detection for user-level memories
+            let scope: string | null;
+            if (isUserLevel) {
+              // Build conversation context from recent messages
+              // FIX: Increased context window from 10 to 20 messages for better detection
+              const recentMessages = roleLines
+                .slice(-20) // Last 20 messages for context
+                .map(line => line.text);
+              
+              const context = {
+                recentMessages,
+                worktree: state.worktree,
+                projectTerms: extractProjectTerms(state.worktree),
+              };
+              
+              // Use contextual detection to determine if this should be project-scoped
+              const scopeDecision = shouldBeProjectScope(text, context, hasGlobalKeyword);
+              scope = scopeDecision.isProjectScope ? state.worktree : null;
+              
+              log(`Debug: Contextual scope detection: ${scopeDecision.isProjectScope ? 'PROJECT' : 'GLOBAL'} (confidence: ${scopeDecision.confidence.toFixed(2)}, reason: ${scopeDecision.reason})`);
+            } else {
+              // Non-user-level memories default to project scope
+              scope = state.worktree;
+            }
 
             // Determine store: STM vs LTM
-            // - Explicit intent (confidence >= 0.85) → LTM (user explicitly said "remember this")
+            // - Episodic memories ALWAYS go to STM (they decay by nature, 7-day half-life)
+            // - Explicit intent (confidence >= 0.85) → LTM for non-episodic (user explicitly said "remember this")
             // - Auto-promote classifications → LTM (learning, decision)
             // - Everything else → STM
             const autoPromoteClassifications = ['learning', 'decision'];
-            const shouldPromoteToLtm = isExplicitIntent || autoPromoteClassifications.includes(classification);
+            const shouldPromoteToLtm = classification !== 'episodic' &&
+              (isExplicitIntent || autoPromoteClassifications.includes(classification));
             const store = shouldPromoteToLtm ? 'ltm' : 'stm';
 
             // Store memory (no embeddings - using Jaccard similarity)
