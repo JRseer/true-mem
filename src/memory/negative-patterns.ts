@@ -148,6 +148,20 @@ export const AI_META_TALK_PATTERNS: RegExp[] = [
 
   // System-generated content markers
   /^\|.+\|$/i,                     // Entire line is pipe-wrapped
+
+  // Framework orchestration content (GSD, etc.)
+  /<true_memory_context\b/i,        // GSD memory context injection
+  /<persona_boundary\b/i,           // GSD persona boundary
+  /<objective\b/i,                  // GSD objectives
+  /<execution_context\b/i,          // GSD execution context
+  /@\.\/\.opencode\//i,             // GSD workflow references
+  /wave-based\s+parallel\s+execution/i,  // GSD orchestration patterns
+  /orchestrator\s+stays\s+lean/i,   // GSD meta-instructions
+  /context\s+budget:\s*~\d+%/i,     // GSD context management
+  /<context>/i,                     // Generic XML context tags
+  /execute\s+all\s+plans\s+in\s+a\s+phase/i,  // GSD execution patterns
+  /spawn\s+subagents/i,             // GSD subagent spawning
+  /collect\s+results/i,             // GSD result collection
 ];
 
 /**
