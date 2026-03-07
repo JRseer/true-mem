@@ -2,9 +2,8 @@
  * Injection Mode Configuration
  * 
  * TRUE_MEM_INJECTION_MODE:
- *   0 = DISABLED - Never inject memories
- *   1 = SESSION_START - Inject only at session start (DEFAULT)
- *   2 = ALWAYS - Inject on every prompt (legacy behavior)
+ *   0 = SESSION_START - Inject only at session start (DEFAULT)
+ *   1 = ALWAYS - Inject on every prompt (legacy behavior)
  * 
  * TRUE_MEM_SUBAGENT_MODE:
  *   0 = DISABLED - Don't inject into task/background_task prompts
@@ -13,7 +12,7 @@
 
 import { log } from '../logger.js';
 
-export type InjectionMode = 0 | 1 | 2;
+export type InjectionMode = 0 | 1;
 export type SubAgentMode = 0 | 1;
 
 export interface InjectionConfig {
@@ -24,13 +23,13 @@ export interface InjectionConfig {
 export function parseInjectionMode(): InjectionMode {
   const envValue = process.env.TRUE_MEM_INJECTION_MODE;
   
-  if (!envValue) return 1; // Default: SESSION_START
+  if (!envValue) return 0; // Default: SESSION_START
   
   const parsed = parseInt(envValue, 10);
   
-  if (![0, 1, 2].includes(parsed)) {
-    log(`Invalid TRUE_MEM_INJECTION_MODE: ${envValue}, using default (1)`);
-    return 1;
+  if (![0, 1].includes(parsed)) {
+    log(`Invalid TRUE_MEM_INJECTION_MODE: ${envValue}, using default (0)`);
+    return 0;
   }
   
   const mode = parsed as InjectionMode;
@@ -62,8 +61,7 @@ export function getInjectionConfig(): InjectionConfig {
 
 function getModeLabel(mode: InjectionMode): string {
   switch (mode) {
-    case 0: return 'DISABLED';
-    case 1: return 'SESSION_START';
-    case 2: return 'ALWAYS';
+    case 0: return 'SESSION_START';
+    case 1: return 'ALWAYS';
   }
 }

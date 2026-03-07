@@ -73,11 +73,10 @@ export type MemoryStatus = 'active' | 'decayed' | 'pinned' | 'forgotten';
 
 /**
  * Injection mode for memory context
- * 0 = DISABLED - Never inject
- * 1 = SESSION_START - Inject only at session start (default)
- * 2 = ALWAYS - Inject on every prompt (legacy)
+ * 0 = SESSION_START - Inject only at session start (default)
+ * 1 = ALWAYS - Inject on every prompt (legacy)
  */
-export type InjectionMode = 0 | 1 | 2;
+export type InjectionMode = 0 | 1;
 
 /**
  * Sub-agent injection mode

@@ -399,28 +399,22 @@ export async function createTrueMemoryPlugin(
 
     'experimental.chat.system.transform': async (input, output) => {
       const sessionId = input.sessionID ?? state.currentSessionId ?? undefined;
-      const injectionMode = state.config.opencode.injection?.mode ?? 2;
-      
-      // Mode 0: DISABLED - Skip all injection
-      if (injectionMode === 0) {
-        log('Injection disabled (mode=0)');
-        return;
-      }
+      const injectionMode = state.config.opencode.injection?.mode ?? 0;
       
       // Ensure session is tracked
       if (sessionId) {
         ensureSessionTracked(sessionId);
       }
-      
-      // Mode 1: SESSION_START - Inject only once per session
-      if (injectionMode === 1 && sessionId) {
+
+      // Mode 0: SESSION_START - Inject only once per session (default)
+      if (injectionMode === 0 && sessionId) {
         if (hasInjected(sessionId)) {
           log(`Skipping injection: already injected for session ${sessionId.slice(0, 8)}...`);
           return;
         }
       }
       
-      // Mode 2: ALWAYS - Continue with injection (current behavior)
+      // Mode 1: ALWAYS - Continue with injection (legacy behavior)
       log(`Injecting memories (mode=${injectionMode})`);
 
       try {
@@ -457,8 +451,8 @@ export async function createTrueMemoryPlugin(
 
           output.system = systemArray;
 
-          // Mark as injected after successful injection (mode 1)
-          if (injectionMode === 1 && sessionId) {
+          // Mark as injected after successful injection (mode 0 = session-start)
+          if (injectionMode === 0 && sessionId) {
             markInjected(sessionId);
           }
           

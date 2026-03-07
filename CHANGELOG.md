@@ -2,6 +2,28 @@
 
 All notable changes to True-Mem will be documented in this file.
 
+## [1.2.0-rc.0] - 2026-03-07
+
+### Added
+- **Injection Mode Configuration** - Configurable memory injection strategy
+  - `TRUE_MEM_INJECTION_MODE` environment variable
+    - 0 = SESSION_START (default) - Inject only at session start, ~76% token savings
+    - 1 = ALWAYS (legacy) - Inject on every prompt
+  - `TRUE_MEM_SUBAGENT_MODE` environment variable
+    - 0 = DISABLED - Skip sub-agent injection
+    - 1 = ENABLED (default) - Inject into task/background_task
+  - Session tracking with `injection-tracker.ts`
+  - New config module `injection-mode.ts`
+
+### Changed
+- Default injection behavior: now injects only at session start (mode=0)
+- Previous "always inject" behavior available via mode=1
+
+### Technical
+- Added `InjectionMode` and `InjectionConfig` types
+- Updated `experimental.chat.system.transform` hook with mode logic
+- Added `session.created` event tracking
+
 ## [1.2.0-rc.0] - 2026-03-06
 
 ### Hot-Reload Resilience

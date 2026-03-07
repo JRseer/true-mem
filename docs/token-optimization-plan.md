@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-07
 **Version**: 1.0.0
-**Status**: Architecture Plan - Not Implemented
+**Status**: IMPLEMENTED - Deployed in v1.2.0-rc.0
 **Target Branch**: `develop` (testing) → `main` (release)
 
 ---
@@ -117,15 +117,11 @@ Use `experimental.chat.system.transform` with mode-based logic:
 │                  Injection Mode Config                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  TRUE_MEM_INJECTION_MODE=0                                   │
-│    └─ DISABLED: Never inject memories                       │
-│    └─ Use case: Debug, temporary disable                    │
-│                                                              │
-│  TRUE_MEM_INJECTION_MODE=1  (DEFAULT - NEW)                 │
+│  TRUE_MEM_INJECTION_MODE=0  (DEFAULT - RECOMMENDED)         │
 │    └─ SESSION_START: Inject only at session start           │
 │    └─ Use case: Token optimization (primary goal)           │
 │                                                              │
-│  TRUE_MEM_INJECTION_MODE=2  (LEGACY)                        │
+│  TRUE_MEM_INJECTION_MODE=1  (LEGACY)                        │
 │    └─ ALWAYS: Inject on every prompt (current behavior)     │
 │    └─ Use case: Maximum context, backward compatibility     │
 │                                                              │
@@ -192,7 +188,7 @@ src/
 
 ```typescript
 // Injection mode configuration
-export type InjectionMode = 0 | 1 | 2;
+export type InjectionMode = 0 | 1;
 
 export interface InjectionConfig {
   mode: InjectionMode;
@@ -215,9 +211,8 @@ export interface OpenCodeConfig {
  * Injection Mode Configuration
  * 
  * TRUE_MEM_INJECTION_MODE:
- *   0 = DISABLED - Never inject memories
- *   1 = SESSION_START - Inject only at session start (DEFAULT)
- *   2 = ALWAYS - Inject on every prompt (legacy behavior)
+ *   0 = SESSION_START - Inject only at session start (DEFAULT, recommended)
+ *   1 = ALWAYS - Inject on every prompt (legacy behavior)
  */
 
 import { log } from '../logger.js';
@@ -226,13 +221,13 @@ import type { InjectionMode, InjectionConfig } from '../types.js';
 export function parseInjectionMode(): InjectionMode {
   const envValue = process.env.TRUE_MEM_INJECTION_MODE;
   
-  if (!envValue) return 1; // Default: SESSION_START
+  if (!envValue) return 0; // Default: SESSION_START
   
   const parsed = parseInt(envValue, 10);
   
-  if (![0, 1, 2].includes(parsed)) {
-    log(`Invalid TRUE_MEM_INJECTION_MODE: ${envValue}, using default (1)`);
-    return 1;
+  if (![0, 1].includes(parsed)) {
+    log(`Invalid TRUE_MEM_INJECTION_MODE: ${envValue}, using default (0)`);
+    return 0;
   }
   
   log(`Injection mode: ${parsed} (${getModeLabel(parsed)})`);
@@ -263,9 +258,8 @@ export function getInjectionConfig(): InjectionConfig {
 
 function getModeLabel(mode: InjectionMode): string {
   switch (mode) {
-    case 0: return 'DISABLED';
-    case 1: return 'SESSION_START';
-    case 2: return 'ALWAYS';
+    case 0: return 'SESSION_START';
+    case 1: return 'ALWAYS';
   }
 }
 ```
@@ -383,14 +377,8 @@ Changes to `experimental.chat.system.transform`:
   const sessionId = input.sessionID ?? state.currentSessionId;
   const injectionMode = state.config.opencode.injection.mode;
   
-  // Mode 0: DISABLED - Skip all injection
+  // Mode 0: SESSION_START - Inject only once per session
   if (injectionMode === 0) {
-    log('Injection disabled (mode=0)');
-    return;
-  }
-  
-  // Mode 1: SESSION_START - Inject only once per session
-  if (injectionMode === 1) {
     if (hasInjected(sessionId)) {
       log(`Skipping injection: already injected session ${sessionId}`);
       return;
@@ -404,15 +392,15 @@ Changes to `experimental.chat.system.transform`:
     }
   }
   
-  // Mode 2: ALWAYS - Continue with injection (current behavior)
+  // Mode 1: ALWAYS - Continue with injection (current behavior/legacy)
   
   log(`Injecting memories (mode=${injectionMode})`);
   
   try {
     // ... existing injection logic ...
     
-    // Mark as injected after successful injection
-    if (injectionMode === 1) {
+    // Mark as injected after successful injection (mode=0 only)
+    if (injectionMode === 0) {
       markInjected(sessionId);
     }
   } catch (error) {
@@ -542,10 +530,9 @@ export async function shouldInjectResumedSession(
 
 ```bash
 # Injection Mode
-# 0 = DISABLED - Never inject memories
-# 1 = SESSION_START - Inject only at session start (DEFAULT, recommended)
-# 2 = ALWAYS - Inject on every prompt (legacy, higher token cost)
-export TRUE_MEM_INJECTION_MODE=1
+# 0 = SESSION_START - Inject only at session start (DEFAULT, recommended)
+# 1 = ALWAYS - Inject on every prompt (legacy, higher token cost)
+export TRUE_MEM_INJECTION_MODE=0
 
 # Sub-Agent Injection
 # 0 = DISABLED - Don't inject into task/background_task prompts
@@ -558,7 +545,7 @@ export TRUE_MEM_SUBAGENT_MODE=1
 ```typescript
 // src/types.ts
 
-export type InjectionMode = 0 | 1 | 2;
+export type InjectionMode = 0 | 1;
 
 export interface InjectionConfig {
   mode: InjectionMode;
@@ -579,11 +566,10 @@ export interface OpenCodeConfig {
 
 | Test Case | Expected Result |
 |-----------|-----------------|
-| New session with mode=1 | Inject once, skip subsequent |
-| Continued session with mode=1 | Inject once at start |
-| Session with mode=2 | Inject on every prompt |
-| Session with mode=0 | No injection |
-| Multiple prompts in same session | Only first injects (mode=1) |
+| New session with mode=0 | Inject once, skip subsequent |
+| Continued session with mode=0 | Inject once at start |
+| Session with mode=1 | Inject on every prompt |
+| Multiple prompts in same session | Only first injects (mode=0) |
 
 ### Phase 2 Tests
 
@@ -601,14 +587,15 @@ opencode
 > "hello"  # Should see "Injected X memories" in log
 > "how are you"  # Should see "Skipping injection"
 
-# Test 2: Mode=2 (legacy)
-TRUE_MEM_INJECTION_MODE=2 opencode
+# Test 2: Mode=1 (legacy)
+TRUE_MEM_INJECTION_MODE=1 opencode
 > "hello"  # Should inject
 > "how are you"  # Should inject again
 
-# Test 3: Mode=0 (disabled)
+# Test 3: Mode=0 (session start - default)
 TRUE_MEM_INJECTION_MODE=0 opencode
-> "hello"  # Should NOT inject
+> "hello"  # Should inject at start
+> "how are you"  # Should NOT inject (already injected)
 
 # Test 4: Resumed session
 opencode
@@ -624,13 +611,13 @@ opencode -c
 
 ### If Issues Arise
 
-1. **Immediate rollback**: Set `TRUE_MEM_INJECTION_MODE=2` (legacy behavior)
+1. **Immediate rollback**: Set `TRUE_MEM_INJECTION_MODE=1` (legacy behavior)
 2. **Code rollback**: Revert to previous commit
-3. **Feature flag**: Mode=2 ensures backward compatibility
+3. **Feature flag**: Mode=1 ensures backward compatibility
 
 ### Safe Defaults
 
-- Default mode=1 (SESSION_START) for new installs
+- Default mode=0 (SESSION_START) for new installs
 - Documentation should explain trade-offs
 - Log file shows injection decisions for debugging
 
@@ -638,7 +625,7 @@ opencode -c
 
 ## Token Savings Estimate
 
-### Current Behavior (Mode=2)
+### Current Behavior (Mode=1)
 
 ```
 Per session:
@@ -649,7 +636,7 @@ Per session:
 - Total tokens: 25,000
 ```
 
-### New Behavior (Mode=1)
+### New Behavior (Mode=0)
 
 ```
 Per session:
@@ -718,7 +705,7 @@ Savings: 19,000 tokens (76% reduction)
 | Race condition in first injection | Medium | Atomic check-and-set in tracker |
 | Resumed session not detected | Medium | Multiple heuristics (message count, context check) |
 | Sub-agents lose needed context | Low | Keep sub-agent injection enabled by default |
-| Users surprised by behavior change | Medium | Clear documentation, mode=2 for legacy |
+| Users surprised by behavior change | Medium | Clear documentation, mode=1 for legacy |
 
 ---
 
@@ -758,11 +745,10 @@ Savings: 19,000 tokens (76% reduction)
 │                                                                   │
 │  T=2  experimental.chat.system.transform                          │
 │        │                                                          │
-│        ├─► mode=0? → Skip                                         │
-│        ├─► mode=1? → Check hasInjected()                          │
+│        ├─► mode=0? → Check hasInjected()                          │
 │        │      ├─► No? → Inject, markInjected()                    │
 │        │      └─► Yes? → Skip                                     │
-│        └─► mode=2? → Always inject                                │
+│        └─► mode=1? → Always inject (legacy)                     │
 │                                                                   │
 │  T=3  Model generates response                                    │
 │        │                                                          │
@@ -777,7 +763,7 @@ Savings: 19,000 tokens (76% reduction)
 │        └─► chat.message                                           │
 │        └─► experimental.chat.system.transform                     │
 │               │                                                   │
-│               └─► mode=1? → hasInjected()=true → Skip             │
+│               └─► mode=0? → hasInjected()=true → Skip             │
 │                                                                   │
 │  T=6  Orchestrator delegates to sub-agent                         │
 │        │                                                          │
@@ -786,7 +772,7 @@ Savings: 19,000 tokens (76% reduction)
 │        │                                                          │
 │        └─► experimental.chat.system.transform (sub-agent)         │
 │               │                                                   │
-│               └─► mode=1? → Different sessionId, injects again    │
+│               └─► mode=0? → Different sessionId, injects again    │
 │                          (LIMITATION: can't distinguish)          │
 │                                                                   │
 └──────────────────────────────────────────────────────────────────┘
@@ -796,4 +782,4 @@ Savings: 19,000 tokens (76% reduction)
 
 **End of Plan**
 
-*Next Step: Review and approve plan before implementation.*
+*Implemented in v1.2.0-rc.0 - Deployed and tested.*

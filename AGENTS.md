@@ -30,6 +30,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Meta-Command | OK - Previene loop infiniti |
 | Hot-Reload | ✅ FIXED - Node.js path persistence + debounce (1s) |
 | Log Rotation | ✅ OK - 1MB con 1 backup |
+| Injection Mode | v1.2.0-rc.0 - Implemented |
 
 ### Branch Attivi
 
@@ -150,6 +151,39 @@ export TRUE_MEM_MAX_MEMORIES=20  # Default
 export TRUE_MEM_MAX_MEMORIES=25  # Più contesto
 export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 ```
+
+### Injection Mode Configuration
+
+**New in v1.2.0**: Configurable injection strategy to reduce token usage.
+
+| Mode | Value | Behavior | Token Savings |
+|------|-------|----------|---------------|
+| SESSION_START | 0 | Inject only at session start (DEFAULT) | ~76% |
+| ALWAYS | 1 | Inject on every prompt (legacy) | 0% |
+
+**Environment Variables:**
+
+```bash
+# Injection mode
+# 0 = SESSION_START - Inject only at session start (default, recommended)
+# 1 = ALWAYS - Inject on every prompt (legacy, higher token cost)
+export TRUE_MEM_INJECTION_MODE=0
+
+# Sub-agent injection
+# 0 = DISABLED - Don't inject into task/background_task prompts
+# 1 = ENABLED - Inject into sub-agents (default)
+export TRUE_MEM_SUBAGENT_MODE=1
+```
+
+**Default Behavior (mode=0):**
+- First prompt in session → inject memories
+- Subsequent prompts → skip (use cached context)
+- Token savings: ~76% per session
+
+**Legacy Behavior (mode=1):**
+- Every prompt receives full memory context
+- Use for maximum context awareness
+- Higher token cost
 
 ---
 
