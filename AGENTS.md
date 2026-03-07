@@ -11,11 +11,60 @@ DEBUG_LOG     = ~/.true-mem/plugin-debug.log
 OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 ```
 
+## Configuration Files
+
+| File | Purpose | Managed By | Priority |
+|------|---------|------------|----------|
+| `~/.true-mem/config.json` | User settings | User/Env vars | Env vars > File > Defaults |
+| `~/.true-mem/state.json` | Runtime state | Plugin (auto) | Internal only |
+| `~/.true-mem/memory.db` | Memory database | Plugin (auto) | - |
+| `~/.true-mem/.migrated` | Migration marker | Plugin (auto) | - |
+
+### User Configuration (config.json)
+
+Created automatically on first run with defaults:
+```json
+{
+  "injectionMode": 0,
+  "subagentMode": 1,
+  "maxMemories": 20
+}
+```
+
+**Override with environment variables:**
+```bash
+export TRUE_MEM_INJECTION_MODE=0  # 0=SESSION_START, 1=ALWAYS
+export TRUE_MEM_SUBAGENT_MODE=1   # 0=DISABLED, 1=ENABLED
+export TRUE_MEM_MAX_MEMORIES=20   # Number of memories to inject
+```
+
+**Priority:** Environment variables > config.json > Hardcoded defaults
+
+### Runtime State (state.json)
+
+Plugin-managed state for hot-reload survival:
+```json
+{
+  "embeddingsEnabled": true,
+  "lastEnvCheck": "2026-03-07T22:07:19.225Z",
+  "nodePath": "/usr/local/bin/node"
+}
+```
+
+**DO NOT EDIT** - This file is written by the plugin.
+
+### Migration (v1.3.0)
+
+When upgrading to v1.3.0, the plugin automatically:
+1. Moves old `config.json` (state) → `state.json`
+2. Creates new `config.json` with user defaults
+3. Creates `.migrated` marker to prevent re-runs
+
 ---
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 07/03/2026 - v1.3.0 - Token Optimization Complete
+**Aggiornamento**: 07/03/2026 - v1.3.0 - Config/State Separation Complete
 
 ### Stato Implementazione
 
@@ -33,6 +82,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 | Injection Mode | ✅ v1.3.0 - Phase 1+2+3 Complete |
 | Session Resume | ✅ Phase 2 - Detect resumed sessions |
 | Sub-Agent Mode | ✅ Phase 3 - Configurable sub-agent injection |
+| Config System | ✅ v1.3.0 - Separate config.json + state.json |
 
 ---
 
