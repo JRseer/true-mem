@@ -5,73 +5,31 @@ All notable changes to True-Mem will be documented in this file.
 ## [1.3.0] - 2026-03-07
 
 ### Added
+- **Phase 1: Injection Mode Configuration**
+  - TRUE_MEM_INJECTION_MODE env var (0=SESSION_START, 1=ALWAYS)
+  - ~76% token savings with default mode
+  
 - **Phase 2: Session Resume Detection**
-  - Detects when user resumes session with `opencode -c`
-  - Skips duplicate injection if memory context already present
-  - New function `shouldInjectResumedSession()` in injection-tracker.ts
+  - Detects resumed sessions (opencode -c)
+  - Prevents duplicate memory injection
   
 - **Phase 3: Sub-Agent Optimization**
-  - `TRUE_MEM_SUBAGENT_MODE` config now fully functional
-  - 0 = DISABLED - Skip memory injection in task/background_task
-  - 1 = ENABLED (default) - Inject into sub-agents
-  - Saves tokens when sub-agents don't need full context
+  - TRUE_MEM_SUBAGENT_MODE config (0=DISABLED, 1=ENABLED)
+  - Skip injection in task/background_task when disabled
 
-### Changed
-- `tool.execute.before` hook now respects `subAgentMode` config
-- `experimental.chat.system.transform` hook checks for resumed sessions
-
-### Technical
-- Updated injection-tracker.ts with resume detection logic
-- Modified index.ts hook implementations for Phase 2 and 3
-
-## [1.2.0-rc.0] - 2026-03-07
-
-### Added
-- **Injection Mode Configuration** - Configurable memory injection strategy
-  - `TRUE_MEM_INJECTION_MODE` environment variable
-    - 0 = SESSION_START (default) - Inject only at session start, ~76% token savings
-    - 1 = ALWAYS (legacy) - Inject on every prompt
-  - `TRUE_MEM_SUBAGENT_MODE` environment variable
-    - 0 = DISABLED - Skip sub-agent injection
-    - 1 = ENABLED (default) - Inject into task/background_task
-  - Session tracking with `injection-tracker.ts`
-  - New config module `injection-mode.ts`
-
-### Changed
-- Default injection behavior: now injects only at session start (mode=0)
-- Previous "always inject" behavior available via mode=1
+### Fixed
+- Race condition in session injection (Oracle review)
+- API timeout protection (3s)
+- Performance: limit message iteration to 10
+- Improved tag detection with regex
 
 ### Technical
-- Added `InjectionMode` and `InjectionConfig` types
-- Updated `experimental.chat.system.transform` hook with mode logic
-- Added `session.created` event tracking
+- New injection-tracker.ts module
+- Updated experimental.chat.system.transform hook
+- Updated tool.execute.before hook
+- Build: 147.89KB, 0 TypeScript errors
 
-## [1.2.0-rc.0] - 2026-03-06
-
-### Hot-Reload Resilience
-
-**Fixed:**
-- Node.js worker path persistence survives hot-reload (#34ecbd3)
-- Debounce init (1s) prevents worker spawn thrashing (#56152e0)
-- Promise leak fix - orphan promises resolved correctly (#2a311fa)
-- Log rotation (1MB, 1 backup) prevents unbounded growth
-- Cleanup race condition fixed (worker ref before null)
-
-**Performance:**
-- Reduced debounce from 2s to 1s for faster worker init
-
-**Code Quality:**
-- @oracle code review passed - production ready
-- 0 HIGH issues, 3 MEDIUM (non-blocking), 3 LOW
-
-**Technical Details:**
-- `getEmbeddingsEnabled()` - Feature flag with config persistence
-- `getNodePath()` - Node.js binary path with hot-reload support
-- `initialize()` - Debounce wrapper with promise management
-- `_doInitialize()` - Worker spawn logic
-- Log rotation on every write, atomic rename
-
-## [1.2.0-rc.0] - 2026-03-05
+## [1.2.0] - 2026-03-07
 
 ### Added - Hot-Reload Resilience
 

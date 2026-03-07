@@ -21,36 +21,18 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | OK - 143.11 KB |
-| TypeCheck | OK - 0 errors |
-| Runtime | OK - Funzionante |
+| Build (bun) | ✅ OK - ~147 KB |
+| TypeCheck | ✅ OK - 0 errors |
+| Runtime | ✅ OK - Funzionante |
 | npm | Pubblicato 1.1.1 (main), rc in develop |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 | Meta-Command | OK - Previene loop infiniti |
-| Hot-Reload | ✅ FIXED - Node.js path persistence + debounce (1s) |
+| Hot-Reload | ✅ OK - Node.js path persistence + debounce (1s) |
 | Log Rotation | ✅ OK - 1MB con 1 backup |
 | Injection Mode | ✅ v1.3.0 - Phase 1+2+3 Complete |
 | Session Resume | ✅ Phase 2 - Detect resumed sessions |
 | Sub-Agent Mode | ✅ Phase 3 - Configurable sub-agent injection |
-
-### Branch Attivi
-
-| Branch | Scopo | Status |
-|--------|-------|--------|
-| `main` | Produzione (Jaccard only) | Stable v1.1.1 |
-| `develop` | **Development** - Hybrid embeddings, hot-reload fixes | Testing locale |
-
-**Branch `develop`:**
-- Branch di sviluppo per nuove feature prima del merge in main
-- Include: hybrid embeddings (opzionale), hot-reload resilience
-- Architettura: Jaccard (sempre attivo) + Transformers.js v4 via Node.js worker (opzionale)
-- Feature flag: `TRUE_MEM_EMBEDDINGS=1` (unset/disabled = Jaccard-only)
-- **NON per rilascio diretto** - Solo test locali, merge in main per release
-
-**Problemi Noti (develop branch):**
-- ⚠️ Plugin restart durante elaborazione prompt (OpenCode behavior, non bloccante)
-- ✅ Embeddings re-inizializzate correttamente dopo restart
 
 ---
 
@@ -63,61 +45,7 @@ OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 - Four-layer defense contro false positives
 - Hot-reload resilient feature flags
 
----
-
-## Architettura
-
-```
-src/
-├── index.ts              # Entry point, fire-and-forget init
-├── config/
-│   └── feature-flags.ts  # Hot-reload resilient feature flags
-├── storage/
-│   ├── sqlite-adapter.ts # bun:sqlite + node:sqlite
-│   └── database.ts       # MemoryDatabase class
-├── memory/
-│   ├── patterns.ts       # Multilingual keywords (15 lingue)
-│   ├── negative-patterns.ts # False positive prevention
-│   ├── classifier.ts     # Four-layer defense
-│   ├── embeddings.ts     # Hybrid similarity (Jaccard + cosine)
-│   ├── embeddings-nlp.ts # EmbeddingService singleton
-│   └── reconsolidate.ts  # Conflict resolution
-├── extraction/queue.ts   # Async extraction
-└── adapters/opencode/    # OpenCode hooks
-```
-
----
-
-## Embeddings Architecture
-
-**Hybrid Bun+Node.js Solution:**
-
-```
-Main Thread (Bun)
-├─ Plugin hooks (OpenCode API)
-├─ Database (SQLite)
-├─ Feature flags (hot-reload resilient)
-└─ EmbeddingService (singleton)
-     └─ Node.js child process worker
-          ├─ Transformers.js v4
-          ├─ all-MiniLM-L6-v2 (q8 quantized, 384 dims)
-          └─ ONNX Runtime (stable)
-```
-
-**Safety Features:**
-- Circuit breaker: 3 failures / 5 min
-- Memory monitoring: 500MB cap
-- Timeout: 5s per request
-- Graceful degradation to Jaccard
-
-**Hot-Reload Resilience:**
-- Node.js path persiste in `~/.true-mem/config.json`
-- Debounce init (1 secondo) previene spawn multipli
-- Promise leak fix - orfane risolte con `false`
-- Log rotation automatico (1MB, 1 backup)
-- Feature flag survives hot-reload
-
-**Feature Flag:**
+**Feature Flag (embeddings):**
 ```bash
 export TRUE_MEM_EMBEDDINGS=1  # Enable embeddings
 export TRUE_MEM_EMBEDDINGS=0  # Disable (default)
@@ -154,9 +82,7 @@ export TRUE_MEM_MAX_MEMORIES=25  # Più contesto
 export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 ```
 
-### Injection Mode Configuration
-
-**New in v1.2.0 (Phase 1)**: Configurable injection strategy to reduce token usage.
+### Injection Mode Configuration (v1.3.0)
 
 | Mode | Value | Behavior | Token Savings |
 |------|-------|----------|---------------|
@@ -167,29 +93,15 @@ export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 
 ```bash
 # Injection mode (Phase 1)
-# 0 = SESSION_START - Inject only at session start (default, recommended)
-# 1 = ALWAYS - Inject on every prompt (legacy, higher token cost)
-export TRUE_MEM_INJECTION_MODE=0
+export TRUE_MEM_INJECTION_MODE=0  # Default: SESSION_START
 
 # Sub-agent injection (Phase 3)
-# 0 = DISABLED - Don't inject into task/background_task prompts
-# 1 = ENABLED - Inject into sub-agents (default)
-export TRUE_MEM_SUBAGENT_MODE=1
+export TRUE_MEM_SUBAGENT_MODE=1  # Default: ENABLED
 ```
 
-**Phase 1 - Injection Mode:**
-- Default (mode=0): First prompt in session → inject memories, subsequent prompts → skip (use cached context)
-- Legacy (mode=1): Every prompt receives full memory context
-
-**Phase 2 - Session Resume Detection:**
-- Detects when a session resumes after being paused (worktree unchanged, recent timestamp)
-- Skips injection if context already present in conversation history
-- Token savings: ~76% per session
-
-**Phase 3 - Sub-Agent Mode:**
-- Controls whether memories are injected into task/background_task prompts
-- Useful to reduce token usage when sub-agents don't need project context
-- Default: ENABLED (injects into sub-agents)
+- **Phase 1**: Default=0 - First prompt in session → inject, subsequent → skip
+- **Phase 2**: Session resume detection - skips if context already present
+- **Phase 3**: Controls injection into task/background_task prompts
 
 ---
 
