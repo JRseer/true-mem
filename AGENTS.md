@@ -9,56 +9,11 @@ THIS_PROJECT  = ~/Documents/_PROGETTI/true-mem
 DATABASE      = ~/.true-mem/memory.db
 DEBUG_LOG     = ~/.true-mem/plugin-debug.log
 OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
+
+# v1.3.0+ Config Files
+CONFIG        = ~/.true-mem/config.json    # User settings (env > file > defaults)
+STATE         = ~/.true-mem/state.json     # Runtime state (auto-managed)
 ```
-
-## Configuration Files
-
-| File | Purpose | Managed By | Priority |
-|------|---------|------------|----------|
-| `~/.true-mem/config.json` | User settings | User/Env vars | Env vars > File > Defaults |
-| `~/.true-mem/state.json` | Runtime state | Plugin (auto) | Internal only |
-| `~/.true-mem/memory.db` | Memory database | Plugin (auto) | - |
-| `~/.true-mem/.migrated` | Migration marker | Plugin (auto) | - |
-
-### User Configuration (config.json)
-
-Created automatically on first run with defaults:
-```json
-{
-  "injectionMode": 0,
-  "subagentMode": 1,
-  "maxMemories": 20
-}
-```
-
-**Override with environment variables:**
-```bash
-export TRUE_MEM_INJECTION_MODE=0  # 0=SESSION_START, 1=ALWAYS
-export TRUE_MEM_SUBAGENT_MODE=1   # 0=DISABLED, 1=ENABLED
-export TRUE_MEM_MAX_MEMORIES=20   # Number of memories to inject
-```
-
-**Priority:** Environment variables > config.json > Hardcoded defaults
-
-### Runtime State (state.json)
-
-Plugin-managed state for hot-reload survival:
-```json
-{
-  "embeddingsEnabled": true,
-  "lastEnvCheck": "2026-03-07T22:07:19.225Z",
-  "nodePath": "/usr/local/bin/node"
-}
-```
-
-**DO NOT EDIT** - This file is written by the plugin.
-
-### Migration (v1.3.0)
-
-When upgrading to v1.3.0, the plugin automatically:
-1. Moves old `config.json` (state) → `state.json`
-2. Creates new `config.json` with user defaults
-3. Creates `.migrated` marker to prevent re-runs
 
 ---
 
@@ -141,17 +96,14 @@ export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 
 **Environment Variables:**
 
-```bash
-# Injection mode (Phase 1)
-export TRUE_MEM_INJECTION_MODE=0  # Default: SESSION_START
+- `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START (default), 1=ALWAYS
+- `TRUE_MEM_SUBAGENT_MODE` - 0=DISABLED, 1=ENABLED (default)
+- `TRUE_MEM_MAX_MEMORIES` - Default 20
+- `TRUE_MEM_EMBEDDINGS` - 0=Jaccard only (default), 1=Hybrid
 
-# Sub-agent injection (Phase 3)
-export TRUE_MEM_SUBAGENT_MODE=1  # Default: ENABLED
-```
-
-- **Phase 1**: Default=0 - First prompt in session → inject, subsequent → skip
-- **Phase 2**: Session resume detection - skips if context already present
-- **Phase 3**: Controls injection into task/background_task prompts
+**Phase 1**: Default=0 - First prompt in session → inject, subsequent → skip  
+**Phase 2**: Session resume detection - skips if context already present  
+**Phase 3**: Controls injection into task/background_task prompts
 
 ---
 
@@ -214,29 +166,21 @@ Per memorizzare in **GLOBAL scope**, il testo deve contenere keyword globale:
 
 ## Dipendenze
 
-```json
-{
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.2.6",
-    "@opencode-ai/sdk": "^1.2.6",
-    "uuid": "^13.0.0"
-  }
-}
-```
+- `@opencode-ai/plugin` - OpenCode plugin SDK
+- `@opencode-ai/sdk` - OpenCode SDK  
+- `uuid` - UUID generation
 
 **CRITICAL:**
-- Usare `bun build` (NON esbuild - crasha in OpenCode)
-- SQLite built-in (bun:sqlite / node:sqlite)
+- Build: `bun build` (NON esbuild - crasha in OpenCode)
+- SQLite: built-in (bun:sqlite / node:sqlite)
 
 ---
 
 ## Debug
 
-```bash
-# Log
-tail -f ~/.true-mem/plugin-debug.log
+**Log:** `tail -f ~/.true-mem/plugin-debug.log`
 
-# Query memories
+**Query memories**
 sqlite3 ~/.true-mem/memory.db "SELECT classification, substr(summary,1,50) FROM memory_units WHERE status='active';"
 
 # Delete memory
