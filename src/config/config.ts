@@ -156,6 +156,25 @@ export function loadConfig(): TrueMemUserConfig {
 }
 
 /**
+ * Generate config JSON with comments preserved
+ */
+function generateConfigWithComments(config: TrueMemUserConfig): string {
+  return `{
+  // Injection mode: 0 = session start only (recommended), 1 = every prompt
+  "injectionMode": ${config.injectionMode},
+  
+  // Sub-agent mode: 0 = disabled, 1 = enabled (default)
+  "subagentMode": ${config.subagentMode},
+  
+  // Embeddings: 0 = Jaccard similarity only, 1 = hybrid (Jaccard + embeddings)
+  "embeddingsEnabled": ${config.embeddingsEnabled},
+  
+  // Maximum memories to inject per prompt (10-50 recommended)
+  "maxMemories": ${config.maxMemories}
+}`;
+}
+
+/**
  * Save user configuration to disk
  */
 export function saveConfig(config: Partial<TrueMemUserConfig>): void {
@@ -165,8 +184,8 @@ export function saveConfig(config: Partial<TrueMemUserConfig>): void {
     }
     
     const currentConfig = loadConfig();
-    const newConfig = { ...currentConfig, ...config };
-    writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
+    const newConfig: TrueMemUserConfig = { ...currentConfig, ...config };
+    writeFileSync(CONFIG_FILE, generateConfigWithComments(newConfig));
     log(`Config: Saved to ${CONFIG_FILE}`);
   } catch (err) {
     log(`Config: Error saving: ${err}`);
