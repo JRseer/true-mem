@@ -317,23 +317,41 @@ tail -f ~/.true-mem/plugin-debug.log | grep "\[embeddings=true\]"
 true-mem/
 ├── src/
 │   ├── index.ts                 # Entry point with fire-and-forget init
+│   ├── state.ts                 # Plugin state management
+│   ├── logger.ts                # File-based debug logging
+│   ├── shutdown.ts              # Graceful shutdown handling
+│   ├── config/
+│   │   ├── config.ts            # JSONC config loading with comments
+│   │   ├── state.ts             # Runtime state persistence
+│   │   ├── migration.ts         # Config migration (v1.2 → v1.3)
+│   │   └── injection-mode.ts    # Injection mode utilities
 │   ├── storage/
 │   │   ├── sqlite-adapter.ts    # bun:sqlite + node:sqlite runtime adapter
-│   │   └── database.ts          # MemoryDatabase class
+│   │   └── database.ts          # MemoryDatabase class with scope filtering
 │   ├── memory/
 │   │   ├── patterns.ts          # Multilingual patterns (15 languages)
 │   │   ├── negative-patterns.ts # False positive prevention
 │   │   ├── role-patterns.ts     # Role-aware extraction (Human vs Assistant)
 │   │   ├── classifier.ts        # Four-layer defense + role validation
-│   │   ├── embeddings.ts        # Jaccard similarity
+│   │   ├── embeddings.ts        # Jaccard similarity search
+│   │   ├── embeddings-nlp.ts    # NLP embeddings worker management
+│   │   ├── embedding-worker.ts  # Worker process for transformer model
 │   │   └── reconsolidate.ts     # Conflict resolution
 │   ├── extraction/
 │   │   └── queue.ts             # Fire-and-forget extraction queue
-│   └── adapters/
-│       └── opencode/
-│           └── index.ts         # Full extraction + injection
+│   ├── adapters/
+│   │   └── opencode/
+│   │       ├── index.ts         # Full extraction + injection hooks
+│   │       ├── injection.ts     # Memory injection logic
+│   │       └── injection-tracker.ts  # Session injection tracking
+│   └── utils/
+│       ├── version.ts           # Version utilities
+│       ├── jsonc.ts             # JSONC parser with comments
+│       └── toast.ts             # Toast notifications
 └── dist/
-    └── index.js                 # Bundle (~92KB)
+    ├── index.js                 # Bundle (~155KB)
+    └── memory/
+        └── embedding-worker.js  # Worker bundle (~3KB)
 ```
 
 ---
