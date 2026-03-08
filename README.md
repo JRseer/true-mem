@@ -120,7 +120,7 @@ OpenCode will automatically download the plugin from npm.
 
 A `~/.true-mem/` directory will be created to store the SQLite database and debug logs.
 
-After restarting OpenCode, you'll see a toast notification in the top-right corner confirming the plugin is loaded:
+After restarting OpenCode, you'll see a toast notification confirming the plugin is loaded:
 
 ```
 True-Mem vX.X.X
@@ -128,6 +128,55 @@ Memory active.
 ```
 
 This confirms True-Mem is installed and working correctly.
+
+---
+
+## Configuration
+
+True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run. You can edit this file to customize behavior:
+
+```jsonc
+{
+  // Injection mode: 0 = session start only (recommended), 1 = every prompt
+  "injectionMode": 0,
+  
+  // Sub-agent mode: 0 = disabled, 1 = enabled (default)
+  "subagentMode": 1,
+  
+  // Embeddings: 0 = Jaccard similarity only, 1 = hybrid (Jaccard + embeddings)
+  "embeddingsEnabled": 0,
+  
+  // Maximum memories to inject per prompt (10-50 recommended)
+  "maxMemories": 20
+}
+```
+
+### Settings Explained
+
+| Setting | Values | Description |
+|---------|--------|-------------|
+| **injectionMode** | `0` or `1` | `0` = inject memories only at session start (saves tokens). `1` = inject on every prompt (legacy behavior) |
+| **subagentMode** | `0` or `1` | `0` = disable memory injection for sub-agents. `1` = enable for sub-agents (default) |
+| **embeddingsEnabled** | `0` or `1` | `0` = use Jaccard similarity only (fast, default). `1` = use hybrid semantic embeddings (experimental) |
+| **maxMemories** | `10-50` | How many memories to include in each prompt. Lower = fewer tokens, Higher = more context |
+
+### Environment Variables
+
+You can also configure via environment variables (override config file):
+
+| Variable | Values | Description |
+|----------|--------|-------------|
+| `TRUE_MEM_INJECTION_MODE` | `0` or `1` | Override injectionMode setting |
+| `TRUE_MEM_SUBAGENT_MODE` | `0` or `1` | Override subagentMode setting |
+| `TRUE_MEM_EMBEDDINGS` | `0` or `1` | Override embeddingsEnabled setting |
+| `TRUE_MEM_MAX_MEMORIES` | `10-50` | Override maxMemories setting |
+
+Example:
+```bash
+export TRUE_MEM_INJECTION_MODE=1
+export TRUE_MEM_MAX_MEMORIES=25
+opencode
+```
 
 ---
 
@@ -228,26 +277,22 @@ The plugin spawns a separate Node.js process to run the transformer model in iso
 
 ### Enabling Embeddings
 
-Set the environment variable before starting OpenCode:
+Edit `~/.true-mem/config.jsonc` and set:
+
+```jsonc
+{
+  "embeddingsEnabled": 1
+}
+```
+
+Or use environment variable:
 
 ```bash
 export TRUE_MEM_EMBEDDINGS=1
 opencode
 ```
 
-To disable (use Jaccard-only mode):
-
-```bash
-export TRUE_MEM_EMBEDDINGS=0  # or unset
-opencode
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TRUE_MEM_EMBEDDINGS` | `0` (disabled) | Enable/disable NLP embeddings (`1` = enabled) |
-| `TRUE_MEM_MAX_MEMORIES` | `20` | Max memories to inject in prompt |
+To disable, set to `0` or remove the line from config.
 
 ### Status
 
@@ -257,7 +302,7 @@ opencode
 
 ```bash
 # Check config file
-cat ~/.true-mem/config.json | grep embeddingsEnabled
+cat ~/.true-mem/config.jsonc | grep embeddingsEnabled
 
 # Check logs for [embeddings=true] tag
 tail -f ~/.true-mem/plugin-debug.log | grep "\[embeddings=true\]"
