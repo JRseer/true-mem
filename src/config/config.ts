@@ -158,7 +158,7 @@ export function loadConfig(): TrueMemUserConfig {
 /**
  * Generate config JSON with comments preserved
  */
-function generateConfigWithComments(config: TrueMemUserConfig): string {
+export function generateConfigWithComments(config: TrueMemUserConfig): string {
   return `{
   // Injection mode: 0 = session start only (recommended), 1 = every prompt
   "injectionMode": ${config.injectionMode},
