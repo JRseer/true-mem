@@ -70,3 +70,6 @@ pnpm-lock.yaml
 # Draft files (not for repo)
 REDDIT_POST.md
 REVIEW.md
+
+# Development plans (personal)
+plans/
