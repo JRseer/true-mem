@@ -11,8 +11,8 @@ DEBUG_LOG     = ~/.true-mem/plugin-debug.log
 OPENCODE_CFG  = ~/.config/opencode/opencode.jsonc
 
 # v1.3.0+ Config Files
-CONFIG        = ~/.true-mem/config.json    # User settings (env > file > defaults)
-STATE         = ~/.true-mem/state.json     # Runtime state (auto-managed)
+CONFIG        = ~/.true-mem/config.jsonc    # User settings (JSONC with comments)
+STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 ```
 
 ---

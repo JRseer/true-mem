@@ -17,6 +17,17 @@ All notable changes to True-Mem will be documented in this file.
   - TRUE_MEM_SUBAGENT_MODE config (0=DISABLED, 1=ENABLED)
   - Skip injection in task/background_task when disabled
 
+- **JSONC Configuration System**
+  - Config file with comments: `~/.true-mem/config.jsonc`
+  - Numeric values (0/1) instead of booleans
+  - Template with inline explanations
+  - Auto-creation on first run
+
+- **Config/State Separation**
+  - `config.jsonc` - User settings (injectionMode, subagentMode, embeddingsEnabled, maxMemories)
+  - `state.json` - Runtime state (nodePath, lastEnvCheck)
+  - Simplified migration: cleanup old config.json, create new files with defaults
+
 ### Fixed
 - Race condition in session injection (Oracle review)
 - API timeout protection (3s)
