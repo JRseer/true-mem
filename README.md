@@ -61,7 +61,7 @@ What makes True-Mem different from a simple database? It's modeled after how hum
 
 **Reconsolidation** - When new information conflicts with existing memories, the system detects similarity and handles it intelligently (merge duplicates, keep both complements, or resolve conflicts).
 
-**Jaccard Similarity Search** - Fast, lightweight semantic retrieval without heavy ML dependencies.
+**Dual Similarity Modes** - Jaccard (default, fast token matching) or ML embeddings (experimental, semantic understanding).
 
 ---
 
