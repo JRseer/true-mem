@@ -5,6 +5,11 @@
  */
 
 /**
+ * Config version - bump when adding new fields
+ */
+export const CONFIG_VERSION = 1;
+
+/**
  * Injection mode types
  */
 export type InjectionMode = 0 | 1;

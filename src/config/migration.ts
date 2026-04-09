@@ -7,11 +7,12 @@
  * 3. Create config.jsonc if missing (user config with comments)
  */
 
-import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from '../logger.js';
-import { DEFAULT_USER_CONFIG, DEFAULT_STATE } from '../types/config.js';
+import { DEFAULT_USER_CONFIG, DEFAULT_STATE, type TrueMemUserConfig } from '../types/config.js';
+import { parseJsonc } from '../utils/jsonc.js';
 import { generateConfigWithComments } from './config.js';
 import { getStorageDir } from './paths.js';
 import type { StorageLocation } from '../types/config.js';
@@ -51,6 +52,26 @@ export function migrateIfNeeded(): void {
   if (!existsSync(newConfigFile)) {
     writeFileSync(newConfigFile, generateConfigWithComments(DEFAULT_USER_CONFIG));
     log('Migration: created config.jsonc');
+  }
+
+  // 4. Update existing config.jsonc with new fields if needed
+  if (existsSync(newConfigFile)) {
+    try {
+      const existing = parseJsonc<TrueMemUserConfig>(readFileSync(newConfigFile, 'utf-8'));
+      
+      // Check if config needs updating (missing fields)
+      const needsUpdate = Object.keys(DEFAULT_USER_CONFIG).some(
+        key => !(key in existing)
+      );
+      
+      if (needsUpdate) {
+        const merged = { ...DEFAULT_USER_CONFIG, ...existing };
+        writeFileSync(newConfigFile, generateConfigWithComments(merged));
+        log('Migration: updated config.jsonc with new fields');
+      }
+    } catch (err) {
+      log(`Migration: error updating config.jsonc: ${err}`);
+    }
   }
 }
 
