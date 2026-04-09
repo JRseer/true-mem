@@ -90,10 +90,7 @@ export function getEmbeddingsEnabled(): boolean {
     return userConfigEnabled;
   }
   
-  // 3. User config not set → read from state file (hot-reload scenario)
-  log('State: user config not set, reading from state.json');
-  
-// Get state file path using storage location
+  // Get state file path using storage location
   const storageLocation = getStorageLocation();
   const stateFile = getStateFilePath(storageLocation);
 

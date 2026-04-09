@@ -13,7 +13,6 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import { log } from '../logger.js';
 import type { TrueMemUserConfig, InjectionMode, SubAgentMode, StorageLocation } from '../types/config.js';
 import { DEFAULT_USER_CONFIG } from '../types/config.js';
@@ -123,16 +122,14 @@ function validateStorageLocation(value: unknown): StorageLocation {
   return DEFAULT_USER_CONFIG.storageLocation;
 }
 
-const LEGACY_DIR = '.true-mem';
-const OPENCODE_DIR = '.config/opencode/true-mem';
+// Note: LEGACY_DIR and OPENCODE_DIR constants removed - using getStorageDir() from paths.ts instead
 
 /**
  * Get config directory path based on storage location
+ * Delegates to getStorageDir() which provides the same functionality
  */
 function getConfigDir(storageLocation: StorageLocation): string {
-  return storageLocation === 'opencode'
-    ? join(homedir(), OPENCODE_DIR)
-    : join(homedir(), LEGACY_DIR);
+  return getStorageDir(storageLocation);
 }
 
 /**
