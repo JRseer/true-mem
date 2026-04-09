@@ -138,8 +138,6 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
 
 ```
 {
-```jsonc
-{
   // Storage location: "legacy" = ~/.true-mem/ (default), "opencode" = ~/.config/opencode/true-mem/
   "storageLocation": "legacy",
 
