@@ -19,16 +19,16 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 09/04/2026 - v1.3.2 - Configurable Storage Location
+**Aggiornamento**: 09/04/2026 - v1.4.1 - Auto Data Migration
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | ✅ OK - ~157 KB |
+| Build (bun) | ✅ OK - ~159 KB |
 | TypeCheck | ✅ OK - 0 errors |
 | Runtime | ✅ OK - Funzionante |
-| npm | Pubblicato 1.3.1 (main), develop in sync |
+| npm | Pubblicato 1.4.0 (main), develop in sync |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 | Meta-Command | OK - Previene loop infiniti |
@@ -40,6 +40,7 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 | Config System | ✅ v1.3.0 - Separate config.json + state.json |
 | Project Scope | ✅ v1.3.1 - Fixed memory leakage across projects |
 | Storage Location | ✅ v1.3.2 - Configurable storage path |
+| Data Migration | ✅ v1.4.1 - Auto copy on location change |
 
 ---
 
@@ -99,6 +100,8 @@ export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 **Environment Variables:**
 
 - `TRUE_MEM_STORAGE_LOCATION` - legacy=~/.true-mem/ (default), opencode=~/.config/opencode/true-mem/
+  - **Auto-migration**: When changed, data is automatically copied from old to new location (not moved)
+  - Original data is preserved as backup - safe to delete old folder after migration if desired
 - `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START (default), 1=ALWAYS
 - `TRUE_MEM_SUBAGENT_MODE` - 0=DISABLED, 1=ENABLED (default)
 - `TRUE_MEM_MAX_MEMORIES` - Default 20
