@@ -142,16 +142,16 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
 {
   // Storage location: "legacy" = ~/.true-mem/ (default), "opencode" = ~/.config/opencode/true-mem/
   "storageLocation": "legacy",
-  
+
   // Injection mode: 0 = session start only (recommended), 1 = every prompt
   "injectionMode": 0,
-  
+
   // Sub-agent mode: 0 = disabled, 1 = enabled (default)
   "subagentMode": 1,
-  
+
   // Embeddings: 0 = Jaccard similarity only, 1 = hybrid (Jaccard + embeddings)
   "embeddingsEnabled": 0,
-  
+
   // Maximum memories to inject per prompt (10-50 recommended)
   "maxMemories": 20
 }
@@ -192,6 +192,20 @@ export TRUE_MEM_INJECTION_MODE=1
 export TRUE_MEM_MAX_MEMORIES=25
 opencode
 ```
+
+### Changing Storage Location
+
+When you change `storageLocation` (via config or env var), True-Mem automatically migrates your data:
+
+1. **Automatic copy** - If the new location has no data, the existing database is copied from the old location
+2. **Non-destructive** - Original data is preserved as backup (you can revert by switching back)
+3. **Config + state** - Along with the database, `state.json` and `config.jsonc` are also copied if they exist
+
+**After migration**, you can safely delete the old location's folder to free up disk space:
+- Legacy: `rm -rf ~/.true-mem/`
+- OpenCode: `rm -rf ~/.config/opencode/true-mem/`
+
+**Note:** If the source database has active WAL/SHM files (not cleanly closed), migration is skipped to avoid data inconsistency.
 
 ---
 

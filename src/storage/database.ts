@@ -4,7 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
@@ -18,12 +18,13 @@ import type {
   HookType,
   PsychMemConfig,
 } from '../types.js';
+import type { StorageLocation } from '../types.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
-import { getStorageDir } from '../config/paths.js';
+import { getStorageDir, getDatabasePath } from '../config/paths.js';
 import { getStorageLocation } from '../config/storage-location.js';
 
 /**
@@ -46,11 +47,79 @@ function generateContentHash(text: string): string {
 }
 
 /**
+ * Auto-migrate data from alternate storage location if needed.
+ * 
+ * This handles the case where a user changes storageLocation setting:
+ * - If configured location has no DB, copy from alternate location
+ * - Copy is non-destructive (keeps original as backup)
+ * - Idempotent (safe to run multiple times)
+ * - Skips if source DB has active WAL/SHM files (not cleanly closed)
+ * 
+ * @param configuredLocation - The storage location configured by user
+ */
+function migrateDataIfNeeded(configuredLocation: StorageLocation): void {
+  try {
+    const alternateLocation: StorageLocation = configuredLocation === 'legacy' ? 'opencode' : 'legacy';
+    
+    const configuredDbPath = getDatabasePath(configuredLocation);
+    const alternateDbPath = getDatabasePath(alternateLocation);
+    
+    // Check if DB already exists at configured location
+    if (existsSync(configuredDbPath)) {
+      log(`Migration: DB already exists at ${configuredLocation}, skipping`);
+      return;
+    }
+    
+    // No DB at configured location, check alternate
+    if (!existsSync(alternateDbPath)) {
+      log(`Migration: no DB at ${alternateLocation}, nothing to migrate`);
+      return;
+    }
+    
+    // Check for WAL/SHM files indicating source DB wasn't cleanly closed
+    const walPath = alternateDbPath + '-wal';
+    const shmPath = alternateDbPath + '-shm';
+    if (existsSync(walPath) || existsSync(shmPath)) {
+      log(`Migration: source DB at ${alternateLocation} has active WAL/SHM files, skipping (not cleanly closed)`);
+      return;
+    }
+    
+    // Found DB at alternate location - migrate it
+    const configuredDir = getStorageDir(configuredLocation);
+    
+    // Ensure target directory exists
+    if (!existsSync(configuredDir)) {
+      mkdirSync(configuredDir, { recursive: true });
+    }
+    
+    // Copy DB file
+    copyFileSync(alternateDbPath, configuredDbPath);
+    
+    // Also copy state.json and config.jsonc if they exist
+    for (const file of ['state.json', 'config.jsonc'] as const) {
+      const src = join(getStorageDir(alternateLocation), file);
+      const dst = join(configuredDir, file);
+      if (existsSync(src) && !existsSync(dst)) {
+        copyFileSync(src, dst);
+      }
+    }
+    
+    log(`Data migrated from ${alternateLocation} to ${configuredLocation}`);
+  } catch (err) {
+    // Don't let migration failure prevent DB init - create fresh DB instead
+    log(`Data migration failed, continuing with fresh DB: ${err}`);
+  }
+}
+
+/**
  * Get database path based on storage location.
  * Uses config storageLocation if available, otherwise falls back to legacy.
  */
 function getDatabasePathFromConfig(): string {
   const storageLocation = getStorageLocation();
+  
+  // Auto-migrate data if needed (before ensuring directory)
+  migrateDataIfNeeded(storageLocation);
 
   // Ensure directory exists
   const storageDir = getStorageDir(storageLocation);
