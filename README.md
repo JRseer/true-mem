@@ -109,7 +109,7 @@ All filtering patterns support **10 languages**: English, Italian, Spanish, Fren
 
 Add to your `~/.config/opencode/opencode.jsonc`:
 
-```jsonc
+```
 {
   "plugin": [
     "true-mem"
@@ -136,7 +136,7 @@ This confirms True-Mem is installed and working correctly.
 
 True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run. You can edit this file to customize behavior:
 
-```jsonc
+```
 {
 ```jsonc
 {
@@ -308,7 +308,7 @@ The plugin spawns a separate Node.js process to run the transformer model in iso
 
 Edit `~/.true-mem/config.jsonc` and set:
 
-```jsonc
+```
 {
   "embeddingsEnabled": 1
 }
