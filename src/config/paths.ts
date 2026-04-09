@@ -13,14 +13,14 @@ import { existsSync, mkdirSync } from 'fs';
 import type { StorageLocation } from '../types/config.js';
 
 const LEGACY_DIR = '.true-mem';
-const OPENCOD_E_DIR = '.config/opencode/true-mem';
+const OPENCODE_DIR = '.config/opencode/true-mem';
 
 /**
  * Get storage directory path based on storage location setting
  */
 export function getStorageDir(location: StorageLocation): string {
   return location === 'opencode'
-    ? join(homedir(), OPENCOD_E_DIR)
+    ? join(homedir(), OPENCODE_DIR)
     : join(homedir(), LEGACY_DIR);
 }
 

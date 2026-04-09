@@ -15,6 +15,7 @@ import { DEFAULT_USER_CONFIG, DEFAULT_STATE } from '../types/config.js';
 import { generateConfigWithComments } from './config.js';
 import { getStorageDir } from './paths.js';
 import type { StorageLocation } from '../types/config.js';
+import { getStorageLocation } from './storage-location.js';
 
 /**
  * Run migration if needed
@@ -23,15 +24,7 @@ import type { StorageLocation } from '../types/config.js';
  * State is throwaway, so no need to migrate values.
  */
 export function migrateIfNeeded(): void {
-  // Get storage location from config or default to legacy
-  let storageLocation: StorageLocation = 'legacy';
-  try {
-    const { loadConfig } = require('./config.js');
-    storageLocation = loadConfig().storageLocation;
-  } catch {
-    // Config not loaded yet, use legacy
-  }
-  
+  const storageLocation = getStorageLocation();
   const configDir = getStorageDir(storageLocation);
   const oldConfigFile = join(configDir, 'config.json'); // old format
   const stateFile = join(configDir, 'state.json');
@@ -66,15 +59,7 @@ export function migrateIfNeeded(): void {
  * Deletes all config files and recreates with defaults
  */
 export function forceMigration(): void {
-  // Get storage location from config or default to legacy
-  let storageLocation: StorageLocation = 'legacy';
-  try {
-    const { loadConfig } = require('./config.js');
-    storageLocation = loadConfig().storageLocation;
-  } catch {
-    // Config not loaded yet, use legacy
-  }
-  
+  const storageLocation = getStorageLocation();
   const configDir = getStorageDir(storageLocation);
   const oldConfigFile = join(configDir, 'config.json');
   const stateFile = join(configDir, 'state.json');

@@ -18,10 +18,7 @@ import { log } from '../logger.js';
 import type { TrueMemUserConfig, InjectionMode, SubAgentMode, StorageLocation } from '../types/config.js';
 import { DEFAULT_USER_CONFIG } from '../types/config.js';
 import { parseJsonc } from '../utils/jsonc.js';
-import { getStorageDir, ensureStorageDir } from './paths.js';
-
-const CONFIG_DIR = join(homedir(), '.true-mem');
-const CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
+import { getStorageDir } from './paths.js';
 
 /**
  * Parse injection mode from env or return default
@@ -127,14 +124,14 @@ function validateStorageLocation(value: unknown): StorageLocation {
 }
 
 const LEGACY_DIR = '.true-mem';
-const OPENCOD_E_DIR = '.config/opencode/true-mem';
+const OPENCODE_DIR = '.config/opencode/true-mem';
 
 /**
  * Get config directory path based on storage location
  */
 function getConfigDir(storageLocation: StorageLocation): string {
   return storageLocation === 'opencode'
-    ? join(homedir(), OPENCOD_E_DIR)
+    ? join(homedir(), OPENCODE_DIR)
     : join(homedir(), LEGACY_DIR);
 }
 

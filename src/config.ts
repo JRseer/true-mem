@@ -134,7 +134,8 @@ export function getDefaultConfig(): PsychMemConfig {
 }
 
 // Backward compatibility: keep DEFAULT_CONFIG for existing code
-// Note: This uses defaults, use getDefaultConfig() for runtime values
+// Note: dbPath field is ignored - actual database path is computed from storageLocation via getStorageDir()
+// Use getDefaultConfig() for runtime-aware configuration
 export const DEFAULT_CONFIG: PsychMemConfig = {
   agentType: 'opencode',
   dbPath: '~/.true-mem/memory.db',

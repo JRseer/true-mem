@@ -23,6 +23,7 @@ import { DEFAULT_STATE } from '../types/config.js';
 import { getEmbeddingsEnabledFromConfig } from './config.js';
 import { getStorageDir } from './paths.js';
 import type { StorageLocation } from '../types/config.js';
+import { getStorageLocation } from './storage-location.js';
 
 // Legacy fallback path for backward compatibility
 const LEGACY_STATE_DIR = join(homedir(), '.true-mem');
@@ -92,21 +93,15 @@ export function getEmbeddingsEnabled(): boolean {
   // 3. User config not set → read from state file (hot-reload scenario)
   log('State: user config not set, reading from state.json');
   
-  // Get state file path using storage location
-  let storageLocation: StorageLocation = 'legacy';
-  try {
-    const { loadConfig } = require('./config.js');
-    storageLocation = loadConfig().storageLocation;
-  } catch {
-    // Config not loaded yet, use legacy
-  }
-const stateFile = getStateFilePath(storageLocation);
-   
-   if (existsSync(stateFile)) {
-     try {
-       const stateJson = readFileSync(stateFile, 'utf-8');
+// Get state file path using storage location
+  const storageLocation = getStorageLocation();
+  const stateFile = getStateFilePath(storageLocation);
+
+  if (existsSync(stateFile)) {
+    try {
+      const stateJson = readFileSync(stateFile, 'utf-8');
       const state: TrueMemState = JSON.parse(stateJson);
-      
+
       // DEFENSIVE: Validate state structure
       if (typeof state.embeddingsEnabled !== 'boolean') {
         log('State corrupted (embeddingsEnabled not boolean), using default (disabled)');
@@ -192,18 +187,9 @@ export function getNodePath(): string {
  * Uses storage location from config, falls back to legacy location for backward compatibility.
  */
 export function loadState(): TrueMemState {
-  // Try to get storage location from config
-  let storageLocation: StorageLocation = 'legacy';
-  try {
-    // Import lazily to avoid circular dependency
-    const { loadConfig } = require('./config.js');
-    storageLocation = loadConfig().storageLocation;
-  } catch {
-    // Config not loaded yet, use legacy
-  }
-  
+  const storageLocation = getStorageLocation();
   const stateFile = getStateFilePath(storageLocation);
-  
+
   if (existsSync(stateFile)) {
     try {
       const stateJson = readFileSync(stateFile, 'utf-8');
@@ -212,7 +198,7 @@ export function loadState(): TrueMemState {
       // Ignore errors
     }
   }
-  
+
   // Fallback to legacy location for backward compatibility
   if (existsSync(LEGACY_STATE_FILE)) {
     try {
@@ -231,21 +217,14 @@ export function loadState(): TrueMemState {
  * Uses storage location from config, falls back to legacy location.
  */
 export function saveState(state: Partial<TrueMemState>): void {
-  // Try to get storage location from config
-  let storageLocation: StorageLocation = 'legacy';
-  try {
-    const { loadConfig } = require('./config.js');
-    storageLocation = loadConfig().storageLocation;
-  } catch {
-    // Config not loaded yet, use legacy
-  }
-  
+  const storageLocation = getStorageLocation();
+
   try {
     const stateDir = getStateDirPath(storageLocation);
     if (!existsSync(stateDir)) {
       mkdirSync(stateDir, { recursive: true });
     }
-    
+
     const stateFile = getStateFilePath(storageLocation);
     const currentState = loadState();
     const newState = { ...currentState, ...state };
