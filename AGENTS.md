@@ -202,17 +202,47 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 
 ## Release Workflow (GitHub Actions)
 
-### REGOLA CRITICA
-
-**PRIMA di pushare per un release:**
+### Workflow Completo
 
 ```bash
-npm version patch -m "release: v%s - <FEATURE_NAME>"
-npm version minor -m "release: v%s - <FEATURE_NAME>"
-npm version major -m "release: v%s - <FEATURE_NAME>"
+# 1. Pushare develop su origin per allineare (evita conflitti al merge)
+git push origin develop
+
+# 2. Merge develop in main
+git checkout main
+git merge develop
+
+# 3. Version bump (PRIMA di pushare per release)
+npm version minor -m "release: v%s - <FEATURE_NAME>"   # feature
+npm version patch -m "release: v%s - <FEATURE_NAME>"    # bug fix
+npm version major -m "release: v%s - <FEATURE_NAME>"    # breaking change
+
+# 4. Pushare main → trigger npm publish + GitHub Release automatici
+git push origin main --tags
 ```
 
-**Automazione:** Push su main con versione nuova → npm publish + GitHub Release automatici
+### Spiegazione
+
+| Step | Azione | Perché |
+|------|--------|--------|
+| 1 | Push develop | Sincronizza remote con locale, evita conflitti al merge |
+| 2 | Merge in main | Porta le feature su main per release |
+| 3 | Version bump | Crea tag Git con versione aggiornata |
+| 4 | Push main + tags | Trigger GitHub Actions per npm publish |
+
+### REGOLA CRITICA
+
+**Il version bump va fatto su main DOPO il merge, PRIMA del push che triggera la release.**
+
+### Convenzione Tag
+
+| Tag | Uso |
+|-----|-----|
+| `release: v1.3.2 - Feature Name` | Changelog automatico su GitHub Release |
+
+### Automazione
+
+Push su main con versione nuova + tag → npm publish + GitHub Release automatici
 
 ---
 
