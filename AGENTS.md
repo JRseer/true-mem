@@ -19,16 +19,16 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 08/03/2026 - v1.3.1 - Project Scope Leakage Fix
+**Aggiornamento**: 09/04/2026 - v1.3.2 - Configurable Storage Location
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | ✅ OK - ~155 KB |
+| Build (bun) | ✅ OK - ~157 KB |
 | TypeCheck | ✅ OK - 0 errors |
 | Runtime | ✅ OK - Funzionante |
-| npm | Pubblicato 1.3.0 (main), develop in sync |
+| npm | Pubblicato 1.3.1 (main), develop in sync |
 | GitHub Actions | OK - NPM_TOKEN secret |
 | Toast | OK - Tutte le sessioni |
 | Meta-Command | OK - Previene loop infiniti |
@@ -39,6 +39,7 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 | Sub-Agent Mode | ✅ Phase 3 - Configurable sub-agent injection |
 | Config System | ✅ v1.3.0 - Separate config.json + state.json |
 | Project Scope | ✅ v1.3.1 - Fixed memory leakage across projects |
+| Storage Location | ✅ v1.3.2 - Configurable storage path |
 
 ---
 
@@ -97,6 +98,7 @@ export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 
 **Environment Variables:**
 
+- `TRUE_MEM_STORAGE_LOCATION` - legacy=~/.true-mem/ (default), opencode=~/.config/opencode/true-mem/
 - `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START (default), 1=ALWAYS
 - `TRUE_MEM_SUBAGENT_MODE` - 0=DISABLED, 1=ENABLED (default)
 - `TRUE_MEM_MAX_MEMORIES` - Default 20
