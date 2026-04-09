@@ -23,15 +23,29 @@ import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
+import { getStorageDir } from '../config/paths.js';
+import type { StorageLocation } from '../types/config.js';
 
 /**
- * Resolve database path, expanding ~ to home directory
+ * Resolve database path, expanding ~ to home directory.
+ * If path starts with ~/.true-mem/ and storageLocation is 'opencode',
+ * redirects to ~/.config/opencode/true-mem/
  */
-function resolveDbPath(dbPath: string): string {
+function resolveDbPath(dbPath: string, storageLocation: StorageLocation = 'legacy'): string {
+  // Expand ~ to home directory
+  let expandedPath = dbPath;
   if (dbPath.startsWith('~/')) {
-    return join(homedir(), dbPath.slice(2));
+    expandedPath = join(homedir(), dbPath.slice(2));
   }
-  return dbPath;
+  
+  // If storage location is 'opencode' and path is in legacy location, redirect
+  if (storageLocation === 'opencode' && expandedPath.includes('.true-mem/memory.db')) {
+    const opencodePath = expandedPath.replace('.true-mem/memory.db', '.config/opencode/true-mem/memory.db');
+    log(`Database: Redirecting from legacy to opencode path: ${opencodePath}`);
+    return opencodePath;
+  }
+  
+  return expandedPath;
 }
 
 /**
@@ -53,6 +67,29 @@ function generateContentHash(text: string): string {
   return createHash('sha256').update(normalized).digest('hex');
 }
 
+/**
+ * Get database path based on storage location.
+ * Uses config storageLocation if available, otherwise falls back to legacy.
+ */
+function getDatabasePathFromConfig(): string {
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    // Import lazily to avoid circular dependency
+    const { loadConfig } = require('../config/config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
+  }
+  
+  // Ensure directory exists
+  const storageDir = getStorageDir(storageLocation);
+  if (!existsSync(storageDir)) {
+    mkdirSync(storageDir, { recursive: true });
+  }
+  
+  return join(storageDir, 'memory.db');
+}
+
 export class MemoryDatabase {
   private db!: SqliteDatabase;
   private config: PsychMemConfig;
@@ -70,7 +107,8 @@ export class MemoryDatabase {
     if (this.initialized) return;
 
     try {
-      const dbPath = resolveDbPath(this.config.dbPath);
+      // Get database path based on storage location from config
+      const dbPath = getDatabasePathFromConfig();
       ensureDbDirectory(dbPath);
       this.db = await createDatabase(dbPath);
 

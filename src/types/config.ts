@@ -15,6 +15,11 @@ export type InjectionMode = 0 | 1;
 export type SubAgentMode = 0 | 1;
 
 /**
+ * Storage location type
+ */
+export type StorageLocation = 'legacy' | 'opencode';
+
+/**
  * User configuration - persistent settings that users can customize
  * Stored in: ~/.true-mem/config.json
  */
@@ -23,16 +28,7 @@ export interface TrueMemUserConfig {
   subagentMode: SubAgentMode;
   maxMemories: number;
   embeddingsEnabled: number;
-}
-
-/**
- * Runtime state - internal plugin state (not user-facing)
- * Stored in: ~/.true-mem/state.json
- */
-export interface TrueMemState {
-  embeddingsEnabled: boolean;
-  lastEnvCheck: string | null;
-  nodePath: string | null;
+  storageLocation: StorageLocation;
 }
 
 /**
@@ -43,6 +39,7 @@ export const DEFAULT_USER_CONFIG: TrueMemUserConfig = {
   subagentMode: 1,       // ENABLED
   maxMemories: 20,
   embeddingsEnabled: 0,
+  storageLocation: 'legacy',
 };
 
 /**
@@ -53,3 +50,13 @@ export const DEFAULT_STATE: TrueMemState = {
   lastEnvCheck: null,
   nodePath: null,
 };
+
+/**
+ * Runtime state - internal plugin state (not user-facing)
+ * Stored in: ~/.true-mem/state.json
+ */
+export interface TrueMemState {
+  embeddingsEnabled: boolean;
+  lastEnvCheck: string | null;
+  nodePath: string | null;
+}

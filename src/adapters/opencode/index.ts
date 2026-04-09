@@ -1,7 +1,6 @@
 /**
  * True-Mem OpenCode Adapter
  */
-
 const BUILD_TIME = "2026-02-23T09:45:00.000Z";
 
 import type { PluginInput, Hooks, Event, Message, Part } from '../../types.js';
@@ -49,13 +48,23 @@ const CACHE_TTL = 5000; // 5 seconds
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import type { StorageLocation } from '../../types.js';
+import { getStorageDir } from '../../config/paths.js';
 
-const WORKTREE_CACHE_FILE = join(homedir(), '.true-mem', '.worktree-cache');
+/**
+ * Get worktree cache file path based on storage location.
+ * Always uses legacy location for backward compatibility.
+ */
+function getWorktreeCacheFile(storageLocation: StorageLocation = 'legacy'): string {
+  return join(getStorageDir(storageLocation), '.worktree-cache');
+}
 
 function getPersistedWorktree(): string | null {
+  // Use legacy location for backward compatibility
+  const worktreeCacheFile = getWorktreeCacheFile('legacy');
   try {
-    if (existsSync(WORKTREE_CACHE_FILE)) {
-      const cached = readFileSync(WORKTREE_CACHE_FILE, 'utf-8').trim();
+    if (existsSync(worktreeCacheFile)) {
+      const cached = readFileSync(worktreeCacheFile, 'utf-8').trim();
       if (cached && cached !== '/' && cached !== '\\' && cached.length > 0) {
         return cached;
       }
@@ -67,8 +76,10 @@ function getPersistedWorktree(): string | null {
 }
 
 function setPersistedWorktree(worktree: string): void {
+  // Use legacy location for backward compatibility
+  const worktreeCacheFile = getWorktreeCacheFile('legacy');
   try {
-    writeFileSync(WORKTREE_CACHE_FILE, worktree, 'utf-8');
+    writeFileSync(worktreeCacheFile, worktree, 'utf-8');
   } catch (err) {
     // Silently ignore - non-critical feature
   }

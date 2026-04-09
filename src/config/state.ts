@@ -21,9 +21,27 @@ import { log } from '../logger.js';
 import type { TrueMemState } from '../types/config.js';
 import { DEFAULT_STATE } from '../types/config.js';
 import { getEmbeddingsEnabledFromConfig } from './config.js';
+import { getStorageDir } from './paths.js';
+import type { StorageLocation } from '../types/config.js';
 
-const CONFIG_DIR = join(homedir(), '.true-mem');
-const STATE_FILE = join(CONFIG_DIR, 'state.json');
+// Legacy fallback path for backward compatibility
+const LEGACY_STATE_DIR = join(homedir(), '.true-mem');
+const LEGACY_STATE_FILE = join(LEGACY_STATE_DIR, 'state.json');
+
+/**
+ * Get state file path based on storage location.
+ * Defaults to legacy location for hot-reload resilience.
+ */
+function getStateFilePath(storageLocation: StorageLocation = 'legacy'): string {
+  return join(getStorageDir(storageLocation), 'state.json');
+}
+
+/**
+ * Get state directory path based on storage location.
+ */
+function getStateDirPath(storageLocation: StorageLocation = 'legacy'): string {
+  return getStorageDir(storageLocation);
+}
 
 /**
  * Reads embeddings feature flag with hot-reload resilience.
@@ -74,9 +92,19 @@ export function getEmbeddingsEnabled(): boolean {
   // 3. User config not set → read from state file (hot-reload scenario)
   log('State: user config not set, reading from state.json');
   
-  if (existsSync(STATE_FILE)) {
-    try {
-      const stateJson = readFileSync(STATE_FILE, 'utf-8');
+  // Get state file path using storage location
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    const { loadConfig } = require('./config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
+  }
+const stateFile = getStateFilePath(storageLocation);
+   
+   if (existsSync(stateFile)) {
+     try {
+       const stateJson = readFileSync(stateFile, 'utf-8');
       const state: TrueMemState = JSON.parse(stateJson);
       
       // DEFENSIVE: Validate state structure
@@ -161,31 +189,67 @@ export function getNodePath(): string {
 
 /**
  * Load state from disk
+ * Uses storage location from config, falls back to legacy location for backward compatibility.
  */
 export function loadState(): TrueMemState {
-  if (existsSync(STATE_FILE)) {
+  // Try to get storage location from config
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    // Import lazily to avoid circular dependency
+    const { loadConfig } = require('./config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
+  }
+  
+  const stateFile = getStateFilePath(storageLocation);
+  
+  if (existsSync(stateFile)) {
     try {
-      const stateJson = readFileSync(STATE_FILE, 'utf-8');
+      const stateJson = readFileSync(stateFile, 'utf-8');
       return JSON.parse(stateJson);
     } catch {
       // Ignore errors
     }
   }
+  
+  // Fallback to legacy location for backward compatibility
+  if (existsSync(LEGACY_STATE_FILE)) {
+    try {
+      const stateJson = readFileSync(LEGACY_STATE_FILE, 'utf-8');
+      return JSON.parse(stateJson);
+    } catch {
+      // Ignore errors
+    }
+  }
+  
   return { ...DEFAULT_STATE };
 }
 
 /**
  * Save state to disk
+ * Uses storage location from config, falls back to legacy location.
  */
 export function saveState(state: Partial<TrueMemState>): void {
+  // Try to get storage location from config
+  let storageLocation: StorageLocation = 'legacy';
   try {
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
+    const { loadConfig } = require('./config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
+  }
+  
+  try {
+    const stateDir = getStateDirPath(storageLocation);
+    if (!existsSync(stateDir)) {
+      mkdirSync(stateDir, { recursive: true });
     }
     
+    const stateFile = getStateFilePath(storageLocation);
     const currentState = loadState();
     const newState = { ...currentState, ...state };
-    writeFileSync(STATE_FILE, JSON.stringify(newState, null, 2));
+    writeFileSync(stateFile, JSON.stringify(newState, null, 2));
   } catch (err) {
     // Non-critical - log and continue
     log(`State save error: ${err}`);

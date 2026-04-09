@@ -4,20 +4,21 @@
  * Loads and manages user configuration from config.json with env var override.
  * 
  * Priority (highest to lowest):
- * 1. Environment variables (TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS)
+ * 1. Environment variables (TRUE_MEM_STORAGE_LOCATION, TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS)
  * 2. config.json file
  * 3. Default values
  * 
- * Config file: ~/.true-mem/config.json
+ * Storage location: ~/.true-mem/ (legacy) or ~/.config/opencode/true-mem/ (opencode)
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from '../logger.js';
-import type { TrueMemUserConfig, InjectionMode, SubAgentMode } from '../types/config.js';
+import type { TrueMemUserConfig, InjectionMode, SubAgentMode, StorageLocation } from '../types/config.js';
 import { DEFAULT_USER_CONFIG } from '../types/config.js';
 import { parseJsonc } from '../utils/jsonc.js';
+import { getStorageDir, ensureStorageDir } from './paths.js';
 
 const CONFIG_DIR = join(homedir(), '.true-mem');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
@@ -104,37 +105,88 @@ function parseEmbeddingsEnabled(envValue: string | undefined): number {
 }
 
 /**
+ * Parse storage location from env or return default
+ */
+function parseStorageLocation(envValue: string | undefined): StorageLocation {
+  if (envValue === 'legacy' || envValue === 'opencode') {
+    return envValue;
+  }
+  if (envValue !== undefined) {
+    log(`Config: Invalid TRUE_MEM_STORAGE_LOCATION: ${envValue}, using default (legacy)`);
+  }
+  return 'legacy';
+}
+
+/**
+ * Validate storage location from file config
+ * Returns 'legacy' or 'opencode', or default if invalid/missing
+ */
+function validateStorageLocation(value: unknown): StorageLocation {
+  if (value === 'legacy' || value === 'opencode') return value;
+  return DEFAULT_USER_CONFIG.storageLocation;
+}
+
+const LEGACY_DIR = '.true-mem';
+const OPENCOD_E_DIR = '.config/opencode/true-mem';
+
+/**
+ * Get config directory path based on storage location
+ */
+function getConfigDir(storageLocation: StorageLocation): string {
+  return storageLocation === 'opencode'
+    ? join(homedir(), OPENCOD_E_DIR)
+    : join(homedir(), LEGACY_DIR);
+}
+
+/**
+ * Get config file path based on storage location
+ */
+function getConfigFile(storageLocation: StorageLocation): string {
+  return join(getConfigDir(storageLocation), 'config.jsonc');
+}
+
+/**
  * Load user configuration
  * 
  * Flow:
- * 1. Start with defaults
- * 2. Override with config.json if exists
+ * 1. Determine storage location (env var first, then file, then default)
+ * 2. Load config from that location if exists
  * 3. Override with environment variables (highest priority)
  * 
  * @returns User configuration object
  */
 export function loadConfig(): TrueMemUserConfig {
+  // Step 1: Determine storage location
+  // Priority: ENV > file (if exists) > default 'legacy'
+  const envStorageLocation = process.env.TRUE_MEM_STORAGE_LOCATION;
+  const parsedStorageLocation = parseStorageLocation(envStorageLocation);
+  
+  // Try to load from the determined location
+  const configFilePath = getConfigFile(parsedStorageLocation);
   let fileConfig: Partial<TrueMemUserConfig> = {};
   
-  // Step 2: Load from config.json if exists
-  if (existsSync(CONFIG_FILE)) {
+  // Step 2: Load from config.json if exists at the determined location
+  if (existsSync(configFilePath)) {
     try {
-      const configJson = readFileSync(CONFIG_FILE, 'utf-8');
+      const configJson = readFileSync(configFilePath, 'utf-8');
       fileConfig = parseJsonc<Partial<TrueMemUserConfig>>(configJson);
-      log(`Config: Loaded from ${CONFIG_FILE}`);
+      log(`Config: Loaded from ${configFilePath}`);
     } catch (err) {
       log(`Config: Error reading config.jsonc, using defaults: ${err}`);
     }
   }
   
   // Step 3: Override with environment variables (highest priority)
-  // Track if env var was explicitly set to apply correct priority: ENV > FILE > DEFAULTS
   const envInjectionMode = process.env.TRUE_MEM_INJECTION_MODE;
   const envSubagentMode = process.env.TRUE_MEM_SUBAGENT_MODE;
   const envMaxMemories = process.env.TRUE_MEM_MAX_MEMORIES;
   const envEmbeddingsEnabled = process.env.TRUE_MEM_EMBEDDINGS;
+  // envStorageLocation already parsed above
 
   const config: TrueMemUserConfig = {
+    storageLocation: envStorageLocation !== undefined
+      ? parseStorageLocation(envStorageLocation)
+      : validateStorageLocation(fileConfig.storageLocation),
     injectionMode: envInjectionMode !== undefined
       ? parseInjectionMode(envInjectionMode)
       : (fileConfig.injectionMode ?? DEFAULT_USER_CONFIG.injectionMode),
@@ -150,7 +202,7 @@ export function loadConfig(): TrueMemUserConfig {
   };
   
   // Log the final config
-  log(`Config: injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}`);
+  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}`);
   
   return config;
 }
@@ -160,6 +212,9 @@ export function loadConfig(): TrueMemUserConfig {
  */
 export function generateConfigWithComments(config: TrueMemUserConfig): string {
   return `{
+  // Storage location: "legacy" = ~/.true-mem/ (default), "opencode" = ~/.config/opencode/true-mem/
+  "storageLocation": "${config.storageLocation}",
+  
   // Injection mode: 0 = session start only (recommended), 1 = every prompt
   "injectionMode": ${config.injectionMode},
   
@@ -179,14 +234,18 @@ export function generateConfigWithComments(config: TrueMemUserConfig): string {
  */
 export function saveConfig(config: Partial<TrueMemUserConfig>): void {
   try {
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-    
     const currentConfig = loadConfig();
     const newConfig: TrueMemUserConfig = { ...currentConfig, ...config };
-    writeFileSync(CONFIG_FILE, generateConfigWithComments(newConfig));
-    log(`Config: Saved to ${CONFIG_FILE}`);
+    const storageLocation = newConfig.storageLocation;
+    const configDir = getConfigDir(storageLocation);
+    const configFile = getConfigFile(storageLocation);
+    
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
+    }
+    
+    writeFileSync(configFile, generateConfigWithComments(newConfig));
+    log(`Config: Saved to ${configFile}`);
   } catch (err) {
     log(`Config: Error saving: ${err}`);
   }

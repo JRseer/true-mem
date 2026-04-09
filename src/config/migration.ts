@@ -13,11 +13,8 @@ import { homedir } from 'os';
 import { log } from '../logger.js';
 import { DEFAULT_USER_CONFIG, DEFAULT_STATE } from '../types/config.js';
 import { generateConfigWithComments } from './config.js';
-
-const CONFIG_DIR = join(homedir(), '.true-mem');
-const OLD_CONFIG_FILE = join(CONFIG_DIR, 'config.json');
-const STATE_FILE = join(CONFIG_DIR, 'state.json');
-const NEW_CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
+import { getStorageDir } from './paths.js';
+import type { StorageLocation } from '../types/config.js';
 
 /**
  * Run migration if needed
@@ -26,26 +23,40 @@ const NEW_CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
  * State is throwaway, so no need to migrate values.
  */
 export function migrateIfNeeded(): void {
-  // Ensure config directory exists
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+  // Get storage location from config or default to legacy
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    const { loadConfig } = require('./config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
   }
-
+  
+  const configDir = getStorageDir(storageLocation);
+  const oldConfigFile = join(configDir, 'config.json'); // old format
+  const stateFile = join(configDir, 'state.json');
+  const newConfigFile = join(configDir, 'config.jsonc');
+  
+  // Ensure config directory exists
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+  
   // 1. Delete old config.json if exists (cleanup from v1.2)
-  if (existsSync(OLD_CONFIG_FILE)) {
-    unlinkSync(OLD_CONFIG_FILE);
+  if (existsSync(oldConfigFile)) {
+    unlinkSync(oldConfigFile);
     log('Migration: deleted old config.json');
   }
-
+  
   // 2. Create state.json if missing
-  if (!existsSync(STATE_FILE)) {
-    writeFileSync(STATE_FILE, JSON.stringify(DEFAULT_STATE, null, 2));
+  if (!existsSync(stateFile)) {
+    writeFileSync(stateFile, JSON.stringify(DEFAULT_STATE, null, 2));
     log('Migration: created state.json');
   }
-
+  
   // 3. Create config.jsonc if missing (WITH COMMENTS)
-  if (!existsSync(NEW_CONFIG_FILE)) {
-    writeFileSync(NEW_CONFIG_FILE, generateConfigWithComments(DEFAULT_USER_CONFIG));
+  if (!existsSync(newConfigFile)) {
+    writeFileSync(newConfigFile, generateConfigWithComments(DEFAULT_USER_CONFIG));
     log('Migration: created config.jsonc');
   }
 }
@@ -55,14 +66,28 @@ export function migrateIfNeeded(): void {
  * Deletes all config files and recreates with defaults
  */
 export function forceMigration(): void {
-  if (existsSync(OLD_CONFIG_FILE)) {
-    unlinkSync(OLD_CONFIG_FILE);
+  // Get storage location from config or default to legacy
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    const { loadConfig } = require('./config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
   }
-  if (existsSync(STATE_FILE)) {
-    unlinkSync(STATE_FILE);
+  
+  const configDir = getStorageDir(storageLocation);
+  const oldConfigFile = join(configDir, 'config.json');
+  const stateFile = join(configDir, 'state.json');
+  const newConfigFile = join(configDir, 'config.jsonc');
+  
+  if (existsSync(oldConfigFile)) {
+    unlinkSync(oldConfigFile);
   }
-  if (existsSync(NEW_CONFIG_FILE)) {
-    unlinkSync(NEW_CONFIG_FILE);
+  if (existsSync(stateFile)) {
+    unlinkSync(stateFile);
+  }
+  if (existsSync(newConfigFile)) {
+    unlinkSync(newConfigFile);
   }
   migrateIfNeeded();
 }
