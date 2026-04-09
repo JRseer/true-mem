@@ -23,16 +23,8 @@ import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
-
-/**
- * Resolve database path, expanding ~ to home directory
- */
-function resolveDbPath(dbPath: string): string {
-  if (dbPath.startsWith('~/')) {
-    return join(homedir(), dbPath.slice(2));
-  }
-  return dbPath;
-}
+import { getStorageDir } from '../config/paths.js';
+import { getStorageLocation } from '../config/storage-location.js';
 
 /**
  * Ensure parent directory exists for database file
@@ -53,6 +45,22 @@ function generateContentHash(text: string): string {
   return createHash('sha256').update(normalized).digest('hex');
 }
 
+/**
+ * Get database path based on storage location.
+ * Uses config storageLocation if available, otherwise falls back to legacy.
+ */
+function getDatabasePathFromConfig(): string {
+  const storageLocation = getStorageLocation();
+
+  // Ensure directory exists
+  const storageDir = getStorageDir(storageLocation);
+  if (!existsSync(storageDir)) {
+    mkdirSync(storageDir, { recursive: true });
+  }
+
+  return join(storageDir, 'memory.db');
+}
+
 export class MemoryDatabase {
   private db!: SqliteDatabase;
   private config: PsychMemConfig;
@@ -70,7 +78,8 @@ export class MemoryDatabase {
     if (this.initialized) return;
 
     try {
-      const dbPath = resolveDbPath(this.config.dbPath);
+      // Get database path based on storage location from config
+      const dbPath = getDatabasePathFromConfig();
       ensureDbDirectory(dbPath);
       this.db = await createDatabase(dbPath);
 

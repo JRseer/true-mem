@@ -5,7 +5,7 @@
  * Uses loadConfig() from config/config.ts for user settings.
  */
 
-import type { PsychMemConfig, ScoringWeights, OpenCodeConfig, SweepConfig, ScopeQuotas } from './types.js';
+import type { PsychMemConfig, ScoringWeights, OpenCodeConfig, SweepConfig, ScopeQuotas, StorageLocation } from './types.js';
 import { getInjectionConfig } from './config/injection-mode.js';
 import { loadConfig } from './config/config.js';
 import { loadState } from './config/state.js';
@@ -74,9 +74,23 @@ export function getDefaultOpenCodeConfig(): OpenCodeConfig {
 export function getDefaultConfig(): PsychMemConfig {
   const maxMemories = getMaxMemories();
   
+  // Get storage location from config
+  let storageLocation: StorageLocation = 'legacy';
+  try {
+    const { loadConfig } = require('./config/config.js');
+    storageLocation = loadConfig().storageLocation;
+  } catch {
+    // Config not loaded yet, use legacy
+  }
+  
+  // Build dbPath based on storage location
+  const dbPath = storageLocation === 'opencode'
+    ? '~/.config/opencode/true-mem/memory.db'
+    : '~/.true-mem/memory.db';
+  
   return {
     agentType: 'opencode',
-    dbPath: '~/.true-mem/memory.db',
+    dbPath,
 
     // Decay rates (per hour)
     stmDecayRate: 0.05,     // ~32-hour half-life
@@ -120,7 +134,8 @@ export function getDefaultConfig(): PsychMemConfig {
 }
 
 // Backward compatibility: keep DEFAULT_CONFIG for existing code
-// Note: This uses defaults, use getDefaultConfig() for runtime values
+// Note: dbPath field is ignored - actual database path is computed from storageLocation via getStorageDir()
+// Use getDefaultConfig() for runtime-aware configuration
 export const DEFAULT_CONFIG: PsychMemConfig = {
   agentType: 'opencode',
   dbPath: '~/.true-mem/memory.db',

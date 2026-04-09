@@ -7,17 +7,16 @@
  * 3. Create config.jsonc if missing (user config with comments)
  */
 
-import { writeFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from '../logger.js';
-import { DEFAULT_USER_CONFIG, DEFAULT_STATE } from '../types/config.js';
+import { DEFAULT_USER_CONFIG, DEFAULT_STATE, type TrueMemUserConfig } from '../types/config.js';
+import { parseJsonc } from '../utils/jsonc.js';
 import { generateConfigWithComments } from './config.js';
-
-const CONFIG_DIR = join(homedir(), '.true-mem');
-const OLD_CONFIG_FILE = join(CONFIG_DIR, 'config.json');
-const STATE_FILE = join(CONFIG_DIR, 'state.json');
-const NEW_CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
+import { getStorageDir } from './paths.js';
+import type { StorageLocation } from '../types/config.js';
+import { getStorageLocation } from './storage-location.js';
 
 /**
  * Run migration if needed
@@ -26,27 +25,53 @@ const NEW_CONFIG_FILE = join(CONFIG_DIR, 'config.jsonc');
  * State is throwaway, so no need to migrate values.
  */
 export function migrateIfNeeded(): void {
+  const storageLocation = getStorageLocation();
+  const configDir = getStorageDir(storageLocation);
+  const oldConfigFile = join(configDir, 'config.json'); // old format
+  const stateFile = join(configDir, 'state.json');
+  const newConfigFile = join(configDir, 'config.jsonc');
+  
   // Ensure config directory exists
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
   }
-
+  
   // 1. Delete old config.json if exists (cleanup from v1.2)
-  if (existsSync(OLD_CONFIG_FILE)) {
-    unlinkSync(OLD_CONFIG_FILE);
+  if (existsSync(oldConfigFile)) {
+    unlinkSync(oldConfigFile);
     log('Migration: deleted old config.json');
   }
-
+  
   // 2. Create state.json if missing
-  if (!existsSync(STATE_FILE)) {
-    writeFileSync(STATE_FILE, JSON.stringify(DEFAULT_STATE, null, 2));
+  if (!existsSync(stateFile)) {
+    writeFileSync(stateFile, JSON.stringify(DEFAULT_STATE, null, 2));
     log('Migration: created state.json');
   }
-
+  
   // 3. Create config.jsonc if missing (WITH COMMENTS)
-  if (!existsSync(NEW_CONFIG_FILE)) {
-    writeFileSync(NEW_CONFIG_FILE, generateConfigWithComments(DEFAULT_USER_CONFIG));
+  if (!existsSync(newConfigFile)) {
+    writeFileSync(newConfigFile, generateConfigWithComments(DEFAULT_USER_CONFIG));
     log('Migration: created config.jsonc');
+  }
+
+  // 4. Update existing config.jsonc with new fields if needed
+  if (existsSync(newConfigFile)) {
+    try {
+      const existing = parseJsonc<TrueMemUserConfig>(readFileSync(newConfigFile, 'utf-8'));
+      
+      // Check if config needs updating (missing fields)
+      const needsUpdate = Object.keys(DEFAULT_USER_CONFIG).some(
+        key => !(key in existing)
+      );
+      
+      if (needsUpdate) {
+        const merged = { ...DEFAULT_USER_CONFIG, ...existing };
+        writeFileSync(newConfigFile, generateConfigWithComments(merged));
+        log('Migration: updated config.jsonc with new fields');
+      }
+    } catch (err) {
+      log(`Migration: error updating config.jsonc: ${err}`);
+    }
   }
 }
 
@@ -55,14 +80,20 @@ export function migrateIfNeeded(): void {
  * Deletes all config files and recreates with defaults
  */
 export function forceMigration(): void {
-  if (existsSync(OLD_CONFIG_FILE)) {
-    unlinkSync(OLD_CONFIG_FILE);
+  const storageLocation = getStorageLocation();
+  const configDir = getStorageDir(storageLocation);
+  const oldConfigFile = join(configDir, 'config.json');
+  const stateFile = join(configDir, 'state.json');
+  const newConfigFile = join(configDir, 'config.jsonc');
+  
+  if (existsSync(oldConfigFile)) {
+    unlinkSync(oldConfigFile);
   }
-  if (existsSync(STATE_FILE)) {
-    unlinkSync(STATE_FILE);
+  if (existsSync(stateFile)) {
+    unlinkSync(stateFile);
   }
-  if (existsSync(NEW_CONFIG_FILE)) {
-    unlinkSync(NEW_CONFIG_FILE);
+  if (existsSync(newConfigFile)) {
+    unlinkSync(newConfigFile);
   }
   migrateIfNeeded();
 }

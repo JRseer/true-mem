@@ -19,13 +19,13 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 
 ## CURRENT STATUS
 
-**Aggiornamento**: 09/03/2026 - v1.3.2 - Default Injection Mode Changed
+**Aggiornamento**: 09/04/2026 - v1.3.2 - Configurable Storage Location
 
 ### Stato Implementazione
 
 | Componente | Status |
 |------------|--------|
-| Build (bun) | ✅ OK - ~155 KB |
+| Build (bun) | ✅ OK - ~157 KB |
 | TypeCheck | ✅ OK - 0 errors |
 | Runtime | ✅ OK - Funzionante |
 | npm | Pubblicato 1.3.1 (main), develop in sync |
@@ -39,6 +39,7 @@ STATE         = ~/.true-mem/state.json      # Runtime state (auto-managed)
 | Sub-Agent Mode | ✅ Phase 3 - Configurable sub-agent injection |
 | Config System | ✅ v1.3.0 - Separate config.json + state.json |
 | Project Scope | ✅ v1.3.1 - Fixed memory leakage across projects |
+| Storage Location | ✅ v1.3.2 - Configurable storage path |
 
 ---
 
@@ -97,12 +98,15 @@ export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 
 **Environment Variables:**
 
-- `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START, 1=ALWAYS (default)
+**Environment Variables:**
+
+- `TRUE_MEM_STORAGE_LOCATION` - legacy=~/.true-mem/ (default), opencode=~/.config/opencode/true-mem/
+- `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START (default), 1=ALWAYS
 - `TRUE_MEM_SUBAGENT_MODE` - 0=DISABLED, 1=ENABLED (default)
 - `TRUE_MEM_MAX_MEMORIES` - Default 20
 - `TRUE_MEM_EMBEDDINGS` - 0=Jaccard only (default), 1=Hybrid
 
-**v1.3.2**: Default changed to 1 (ALWAYS) - real-time memory updates
+**v1.3.2**: Default injectionMode changed to 0 (SESSION_START) for token efficiency
 **Phase 1**: Mode 1 = inject every prompt, Mode 0 = inject once per session
 **Phase 2**: Session resume detection - skips if context already present
 **Phase 3**: Controls injection into task/background_task prompts
@@ -201,17 +205,47 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 
 ## Release Workflow (GitHub Actions)
 
-### REGOLA CRITICA
-
-**PRIMA di pushare per un release:**
+### Workflow Completo
 
 ```bash
-npm version patch -m "release: v%s - <FEATURE_NAME>"
-npm version minor -m "release: v%s - <FEATURE_NAME>"
-npm version major -m "release: v%s - <FEATURE_NAME>"
+# 1. Pushare develop su origin per allineare (evita conflitti al merge)
+git push origin develop
+
+# 2. Merge develop in main
+git checkout main
+git merge develop
+
+# 3. Version bump (PRIMA di pushare per release)
+npm version minor -m "release: v%s - <FEATURE_NAME>"   # feature
+npm version patch -m "release: v%s - <FEATURE_NAME>"    # bug fix
+npm version major -m "release: v%s - <FEATURE_NAME>"    # breaking change
+
+# 4. Pushare main → trigger npm publish + GitHub Release automatici
+git push origin main --tags
 ```
 
-**Automazione:** Push su main con versione nuova → npm publish + GitHub Release automatici
+### Spiegazione
+
+| Step | Azione | Perché |
+|------|--------|--------|
+| 1 | Push develop | Sincronizza remote con locale, evita conflitti al merge |
+| 2 | Merge in main | Porta le feature su main per release |
+| 3 | Version bump | Crea tag Git con versione aggiornata |
+| 4 | Push main + tags | Trigger GitHub Actions per npm publish |
+
+### REGOLA CRITICA
+
+**Il version bump va fatto su main DOPO il merge, PRIMA del push che triggera la release.**
+
+### Convenzione Tag
+
+| Tag | Uso |
+|-----|-----|
+| `release: v1.3.2 - Feature Name` | Changelog automatico su GitHub Release |
+
+### Automazione
+
+Push su main con versione nuova + tag → npm publish + GitHub Release automatici
 
 ---
 

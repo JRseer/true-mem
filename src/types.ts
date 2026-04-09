@@ -70,28 +70,12 @@ export type MemoryStatus = 'active' | 'decayed' | 'pinned' | 'forgotten';
 // =============================================================================
 // Injection Mode Types
 // =============================================================================
-
-/**
- * Injection mode for memory context
- * 0 = SESSION_START - Inject only at session start (default)
- * 1 = ALWAYS - Inject on every prompt (legacy)
- */
-export type InjectionMode = 0 | 1;
-
-/**
- * Sub-agent injection mode
- * 0 = DISABLED - Don't inject into sub-agents
- * 1 = ENABLED - Inject into sub-agents (default)
- */
-export type SubAgentMode = 0 | 1;
+// Note: InjectionMode and SubAgentMode are re-exported from ./types/config.js below
 
 /**
  * Injection configuration
  */
-export interface InjectionConfig {
-  mode: InjectionMode;
-  subAgentMode: SubAgentMode;
-}
+// Note: mode and subAgentMode types come from re-exported types
 
 // =============================================================================
 // Role-Aware Memory Types
@@ -409,7 +393,7 @@ export interface OpenCodeConfig {
   maxSessionStartMemories: number;
   messageWindowSize: number;
   messageImportanceThreshold: number;
-  injection: InjectionConfig;
+  injection: import('./config/injection-mode.js').InjectionConfig;
 }
 
 export interface ScopeQuotas {
@@ -452,6 +436,17 @@ export interface PsychMemConfig {
   applyDecayOnlyToEpisodic?: boolean;
   decayThreshold?: number;
 }
+
+// =============================================================================
+// OpenCode Plugin Types (re-export from SDK)
+// =============================================================================
+
+// =============================================================================
+// Config Types (re-export from config module)
+// =============================================================================
+
+export type { StorageLocation, TrueMemUserConfig, TrueMemState, InjectionMode, SubAgentMode } from './types/config.js';
+export { DEFAULT_USER_CONFIG, DEFAULT_STATE } from './types/config.js';
 
 // =============================================================================
 // OpenCode Plugin Types (re-export from SDK)

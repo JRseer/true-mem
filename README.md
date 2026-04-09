@@ -138,8 +138,13 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
 
 ```jsonc
 {
-  // Injection mode: 0 = session start only, 1 = every prompt (default, real-time updates)
-  "injectionMode": 1,
+```jsonc
+{
+  // Storage location: "legacy" = ~/.true-mem/ (default), "opencode" = ~/.config/opencode/true-mem/
+  "storageLocation": "legacy",
+  
+  // Injection mode: 0 = session start only (recommended), 1 = every prompt
+  "injectionMode": 0,
   
   // Sub-agent mode: 0 = disabled, 1 = enabled (default)
   "subagentMode": 1,
@@ -156,7 +161,10 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
 
 | Setting | Values | Description |
 |---------|--------|-------------|
-| **injectionMode** | `0` or `1` | `0` = inject at session start only (~76% token savings). `1` = inject on every prompt (default, real-time updates) |
+| Setting | Values | Description |
+|---------|--------|-------------|
+| **storageLocation** | `"legacy"` or `"opencode"` | Where to store data. `"legacy"` = `~/.true-mem/` (default). `"opencode"` = `~/.config/opencode/true-mem/` |
+| **injectionMode** | `0` or `1` | `0` = inject memories only at session start (saves tokens, default). `1` = inject on every prompt (legacy behavior) |
 | **subagentMode** | `0` or `1` | `0` = disable memory injection for sub-agents. `1` = enable for sub-agents (default) |
 | **embeddingsEnabled** | `0` or `1` | `0` = use Jaccard similarity only (fast, default). `1` = use hybrid semantic embeddings (experimental) |
 | **maxMemories** | `10-50` | How many memories to include in each prompt (default: 20). Lower = fewer tokens, Higher = more context |
@@ -171,6 +179,7 @@ You can also configure via environment variables (override config file):
 
 | Variable | Values | Description |
 |----------|--------|-------------|
+| `TRUE_MEM_STORAGE_LOCATION` | `legacy` or `opencode` | Override storageLocation setting |
 | `TRUE_MEM_INJECTION_MODE` | `0` or `1` | Override injectionMode setting |
 | `TRUE_MEM_SUBAGENT_MODE` | `0` or `1` | Override subagentMode setting |
 | `TRUE_MEM_EMBEDDINGS` | `0` or `1` | Override embeddingsEnabled setting |
@@ -178,6 +187,7 @@ You can also configure via environment variables (override config file):
 
 Example:
 ```bash
+export TRUE_MEM_STORAGE_LOCATION=opencode
 export TRUE_MEM_INJECTION_MODE=1
 export TRUE_MEM_MAX_MEMORIES=25
 opencode
