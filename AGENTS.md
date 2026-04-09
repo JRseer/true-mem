@@ -211,34 +211,49 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 ### Workflow Completo
 
 ```bash
-# 1. Pushare develop su origin per allineare (evita conflitti al merge)
-git push origin develop
+# 1. Commit feature su develop (se non già fatto)
+# ... lavoro su develop ...
 
-# 2. Merge develop in main
-git checkout main
-git merge develop
-
-# 3. Version bump (PRIMA di pushare per release)
+# 2. Version bump SU DEVELOP (crea tag qui)
+git checkout develop
 npm version minor -m "release: v%s - <FEATURE_NAME>"   # feature
 npm version patch -m "release: v%s - <FEATURE_NAME>"    # bug fix
 npm version major -m "release: v%s - <FEATURE_NAME>"    # breaking change
 
-# 4. Pushare main → trigger npm publish + GitHub Release automatici
-git push origin main --tags
+# 3. Push develop con il nuovo tag
+git push origin develop --tags
+
+# 4. Merge develop in main (porta anche il tag)
+git checkout main
+git merge develop
+
+# 5. Push main → trigger npm publish + GitHub Release automatici
+git push origin main
+
+# 6. Allinea develop con main (per avere la versione corretta anche su develop)
+git checkout develop
+git merge main
 ```
 
 ### Spiegazione
 
 | Step | Azione | Perché |
 |------|--------|--------|
-| 1 | Push develop | Sincronizza remote con locale, evita conflitti al merge |
-| 2 | Merge in main | Porta le feature su main per release |
-| 3 | Version bump | Crea tag Git con versione aggiornata |
-| 4 | Push main + tags | Trigger GitHub Actions per npm publish |
+| 1 | Commit su develop | Feature completata e testata |
+| 2 | Version bump su develop | Crea tag Git con versione aggiornata |
+| 3 | Push develop | Sincronizza remote, tag visibile |
+| 4 | Merge in main | Porta codice + tag su main per release |
+| 5 | Push main | Trigger GitHub Actions per npm publish |
+| 6 | Merge main in develop | Allinea versione su develop |
 
 ### REGOLA CRITICA
 
-**Il version bump va fatto su main DOPO il merge, PRIMA del push che triggera la release.**
+**Il version bump va fatto su DEVELOP, non su main. Poi si fa merge di develop in main.**
+
+Questo garantisce che:
+- Il tag sia creato sul commit di develop
+- Develop abbia sempre la versione corretta dopo il rilascio
+- Main e develop siano sincronizzati sulla stessa versione
 
 ### Convenzione Tag
 
