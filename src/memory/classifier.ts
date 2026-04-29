@@ -31,32 +31,37 @@ const CLASSIFICATION_KEYWORDS: Record<string, { primary: string[]; boosters: str
       'yesterday', 'today', 'we did', 'we made', 'we worked',
       'during the session', 'in the meeting', 'this time', 'just now',
       'we fixed', 'we refactored', 'we implemented',
+      // Chinese
+      '昨天', '今天', '刚刚', '剛剛', '刚才', '剛才', '这次', '這次', '上次',
+      '这次会话', '這次會話', '这个会话', '這個會話', '我们做了', '我們做了',
+      '我们修了', '我們修了', '我们实现了', '我們實現了',
     ],
     boosters: [
       'session', 'call', 'meeting', 'riunione', 'sessione',
       'momento', 'adesso', 'ora', 'now', 'just',
       'poco fa', 'prima', 'earlier', 'last week',
+      '会话', '會話', '刚刚', '剛剛', '刚才', '剛才', '现在', '現在', '之前', '上周',
     ],
   },
   decision: {
-    primary: ['decided', 'chose', 'selected', 'picked', 'opted', 'went with', 'deciso', 'scelto', 'selezionato'],
-    boosters: ['because', 'since', 'reason', 'rationale', 'due to', 'as', 'perché', 'poiché', 'motivo', 'ragione'],
+    primary: ['decided', 'chose', 'selected', 'picked', 'opted', 'went with', 'deciso', 'scelto', 'selezionato', '决定了', '決定了', '决定', '決定', '选择了', '選擇了', '采用', '採用'],
+    boosters: ['because', 'since', 'reason', 'rationale', 'due to', 'as', 'perché', 'poiché', 'motivo', 'ragione', '因为', '因為', '原因', '所以'],
   },
   learning: {
-    primary: ['learned', 'discovered', 'found out', 'realized', 'figured out', 'imparato', 'scoperto', 'capito'],
-    boosters: ['today', 'just', 'finally', 'interesting', 'surprising', 'oggi', 'appena'],
+    primary: ['learned', 'discovered', 'found out', 'realized', 'figured out', 'imparato', 'scoperto', 'capito', '学到', '學到', '发现', '發現', '意识到', '意識到', '搞明白', '明白了', '原来', '原來'],
+    boosters: ['today', 'just', 'finally', 'interesting', 'surprising', 'oggi', 'appena', '今天', '刚刚', '剛剛', '终于', '終於'],
   },
   constraint: {
-    primary: ["can't", 'cannot', 'must not', 'never', 'forbidden', 'prohibited', 'not allowed', 'non posso', 'vietato', 'proibito', 'obbligatorio'],
-    boosters: ['always', 'require', 'mandatory', 'enforce', 'strict', 'mai', 'necessario'],
+    primary: ["can't", 'cannot', 'must not', 'never', 'forbidden', 'prohibited', 'not allowed', 'non posso', 'vietato', 'proibito', 'obbligatorio', '不能', '不可以', '禁止', '不允许', '不允許', '绝不能', '絕不能'],
+    boosters: ['always', 'require', 'mandatory', 'enforce', 'strict', 'mai', 'necessario', '必须', '必須', '务必', '務必', '强制', '強制'],
   },
   preference: {
-    primary: ['prefer', 'like', 'want', 'favor', 'rather', 'preferisco', 'mi piace', 'voglio', 'prediligo'],
-    boosters: ['better', 'best', 'instead', 'over', 'more than', 'meglio', 'ottimo', 'invece', 'rispetto a', 'sempre'],
+    primary: ['prefer', 'like', 'want', 'favor', 'rather', 'preferisco', 'mi piace', 'voglio', 'prediligo', '喜欢', '喜歡', '偏好', '想要', '更喜欢', '更喜歡', '宁愿', '寧願', '总是用', '總是用', '习惯用', '習慣用', '默认用', '默認用'],
+    boosters: ['better', 'best', 'instead', 'over', 'more than', 'meglio', 'ottimo', 'invece', 'rispetto a', 'sempre', '更好', '最好', '而不是', '相比', '总是', '總是'],
   },
   procedural: {
-    primary: ['step', 'workflow', 'process', 'procedure', 'instructions', 'guide'],
-    boosters: ['first', 'then', 'next', 'finally', 'after', 'before'],
+    primary: ['step', 'workflow', 'process', 'procedure', 'instructions', 'guide', '步骤', '步驟', '流程', '过程', '過程', '做法', '操作', '指南'],
+    boosters: ['first', 'then', 'next', 'finally', 'after', 'before', '先', '然后', '然後', '接着', '接著', '最后', '最後', '之后', '之後', '之前'],
   },
 };
 
@@ -232,6 +237,20 @@ export function classifyWithExplicitIntent(
     /\bnote(?:\s+\w+){0,5}?\s+that\b:?\s*/gi,
     /\bdon'?t forget\b:?\s*/gi,
     /\bmake sure to remember\b:?\s*/gi,
+
+    // Chinese - no word boundaries because CJK is not whitespace-delimited
+    /请记住[:：]?\s*/gi,
+    /請記住[:：]?\s*/gi,
+    /记住这个[:：]?\s*/gi,
+    /記住這個[:：]?\s*/gi,
+    /记住[:：]?\s*/gi,
+    /記住[:：]?\s*/gi,
+    /别忘了[:：]?\s*/gi,
+    /別忘了[:：]?\s*/gi,
+    /不要忘记[:：]?\s*/gi,
+    /不要忘記[:：]?\s*/gi,
+    /重要的是[:：]?\s*/gi,
+    /注意[:：]?\s*/gi,
   ];
 
   // Find the FIRST occurrence of any explicit remember marker in the entire text

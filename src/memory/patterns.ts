@@ -681,6 +681,14 @@ export const GLOBAL_SCOPE_KEYWORDS = {
     'zawsze', 'wszedzie', 'dla wszystkich projektow',
     'we wszystkich moich projektach',
   ],
+  nonLatin: [
+    // Chinese (Simplified)
+    '总是', '全局', '全局地', '所有项目', '全部项目', '每个项目', '各个项目',
+    '在所有项目中', '在每个项目中', '适用于所有项目', '对所有项目都适用',
+    // Chinese (Traditional)
+    '總是', '全域', '全局', '所有專案', '全部專案', '每個專案', '各個專案',
+    '在所有專案中', '在每個專案中', '適用於所有專案', '對所有專案都適用',
+  ],
 };
 
 /**
@@ -688,8 +696,9 @@ export const GLOBAL_SCOPE_KEYWORDS = {
  */
 export function hasGlobalScopeKeyword(text: string): boolean {
   const lowerText = text.toLowerCase();
-  return GLOBAL_SCOPE_KEYWORDS.latin.some(keyword =>
-    lowerText.includes(keyword.toLowerCase())
+  return (
+    GLOBAL_SCOPE_KEYWORDS.latin.some(keyword => lowerText.includes(keyword.toLowerCase())) ||
+    GLOBAL_SCOPE_KEYWORDS.nonLatin.some(keyword => text.includes(keyword))
   );
 }
 
@@ -702,7 +711,7 @@ export function hasGlobalScopeKeyword(text: string): boolean {
 const PROJECT_SIGNAL_WEIGHTS = {
   PROJECT_PATH_MENTIONED: 0.4,      // Full project path appears in conversation
   PROJECT_TERM_MATCH: 0.3,          // Each project term match
-  EXPLICIT_PROJECT_CONTEXT: 0.3,    // Phrases like "in this project"
+  EXPLICIT_PROJECT_CONTEXT: 0.4,    // Phrases like "in this project" should be decisive on their own
   FILE_REFERENCE: 0.1,               // Each file reference (.ts, .js, etc.)
 } as const;
 
@@ -733,7 +742,7 @@ export function extractProjectTerms(worktree: string): string[] {
     return []; // Home directory is not a project
   }
   
-  const parts = worktree.split('/');
+  const parts = worktree.split(/[\\/]/);
   const projectName = parts[parts.length - 1];
   
   if (!projectName || projectName.startsWith('unknown-project')) {
@@ -782,6 +791,13 @@ export function detectProjectSignals(context: ConversationContext): { score: num
     /in this (session|conversation|chat)/i,
     /per (questo |il )?progetto/i,
     /for (this |the )?project/i,
+    /在(?:这个|當前|当前)?项目(里|中)?/i,
+    /这个项目(里|中)?/i,
+    /本项目(里|中)?/i,
+    /当前项目(里|中)?/i,
+    /在当前代码库(里|中)?/i,
+    /这个代码库(里|中)?/i,
+    /该项目(里|中)?/i,
   ];
   if (projectPhrases.some(p => p.test(recentText))) {
     score += PROJECT_SIGNAL_WEIGHTS.EXPLICIT_PROJECT_CONTEXT;

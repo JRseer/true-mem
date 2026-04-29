@@ -19,6 +19,11 @@
  * implies understanding, but "I don't understand" is the opposite.
  */
 export const NEGATION_PATTERNS: RegExp[] = [
+  // Chinese - negation patterns
+  /我不(?:明白|理解|知道|记得|記得|确定|確定|想|会|會|懂)/i,
+  /我(?:没|沒)(?:明白|理解|记住|記住|记得|記得|搞懂|搞明白)/i,
+  /(?:这个|這個|这段|這段|它|這個配置|这个配置).{0,6}不(?:工作|运行|運行|生效|存在|对|對|正确|正確)/i,
+
   // Italian - negation patterns
   /\bnon\s+(ho|hai|ha|abbiamo|avete|hanno)\s+(capito|capita|capisco|capisci|capisce|capiamo)\b/i,
   /\bnon\s+(è|sono|e'|erano|eravamo|fu|fui)\b/i,
@@ -179,11 +184,13 @@ export function isQuestion(text: string): boolean {
 
   // Ends with question mark
   if (trimmed.endsWith('?')) return true;
+  if (trimmed.endsWith('？')) return true;
 
   // Italian question patterns (no question mark in casual writing)
   const questionPatterns = [
     /\b(?:cosa|come|quando|dove|perché|chi|quale|quanto)\s+(?:devo|posso|dovrei|potrei|conviene)\b/i,
     /\b(?:potrò|dovrò|posso|devo)\s+\w+/i,
+    /(?:怎么|怎麼|什么|什麼|什么时候|什麼時候|哪里|哪裡|为何|為何|为什么|為什麼|谁|誰|哪个|哪個).{0,8}(?:要|该|該|能|可以|需不需要)/i,
   ];
 
   return questionPatterns.some(p => p.test(trimmed));
@@ -199,6 +206,12 @@ export function isQuestion(text: string): boolean {
  * "Remember this!" = imperative, storage request
  */
 export const FIRST_PERSON_RECALL_PATTERNS: RegExp[] = [
+  // Chinese - 1st person indicative recall
+  /我(?:还|還)?记得/i,
+  /我(?:还|還)?想起/i,
+  /我们记得/i,
+  /我們記得/i,
+
   // English - 1st person indicative
   /\bI\s+(remember|recall|recollect|don'?t\s+forget)\b/i,
   /\bwe\s+(remember|recall|recollect)\b/i,
@@ -260,6 +273,9 @@ export const FIRST_PERSON_RECALL_PATTERNS: RegExp[] = [
  * it should be stored as a task/reminder.
  */
 export const MEMORY_COMMAND_PATTERNS: RegExp[] = [
+  // Chinese - commands targeting memory system
+  /(?:删除|刪除|删掉|刪掉|清除|移除|忘掉|更新).{0,16}(?:这段|這段|这个|這個|这条|這條|这些|這些)?(?:记忆|記憶|记住的内容|記住的內容|回忆|回憶)/i,
+
   // Italian - commands targeting memory system
   /\b(cancell|elimin|rimuov|dimentic|aggiorn)\w*\s+(questa|la|queste|le)\s+memor/i,
   /\b(cancell|elimin|rimuov|dimentic|aggiorn)\s+(questo|il|questi|i)\s+ricord/i,
@@ -301,6 +317,9 @@ export const MEMORY_COMMAND_PATTERNS: RegExp[] = [
  * "Remember to delete the temp files" → STORE as reminder
  */
 export const MEMORY_COMMAND_OVERRIDES: RegExp[] = [
+  // Chinese - explicit storage overrides
+  /(?:记住|記住|记得|記得|提醒我|提醒我们|提醒我們).{0,3}(?:去|要|得)?(?:删除|刪除|删掉|刪掉|清理|移除|更新)/i,
+
   // Italian - explicit storage overrides
   /\b(ricordati|ricorda|ricordare)\s+(di\s+)?(cancell|elimin|rimuov|dimentic|aggiorn)/i,
 
@@ -341,6 +360,10 @@ export const MEMORY_COMMAND_OVERRIDES: RegExp[] = [
  * Key distinction: question word vs. preposition/demonstrative after "remind me"
  */
 export const REMIND_RECALL_PATTERNS: RegExp[] = [
+  // Chinese: remind me [question word]
+  /提醒我(?:一下)?(?:怎么|怎麼|什么|什麼|什么时候|什麼時候|哪里|哪裡|为什么|為什麼|为何|為何|谁|誰|哪个|哪個)/i,
+  /记得(?:跟我说|告訴我|告诉我)?(?:怎么|怎麼|什么|什麼|什么时候|什麼時候|哪里|哪裡|为什么|為什麼|谁|誰|哪个|哪個)/i,
+
   // English: remind me [question word]
   /\bremind\s+me\s+(how|what|when|where|why|who|which)\b/i,
   /\bremind\s+me\s+of\s+(the|what|how|when|where|why)\b/i,
