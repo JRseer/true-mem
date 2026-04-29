@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #020617;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #020617;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}

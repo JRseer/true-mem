@@ -59,6 +59,75 @@ export TRUE_MEM_EMBEDDINGS=1  # Enable embeddings
 export TRUE_MEM_EMBEDDINGS=0  # Disable (default)
 ```
 
+### Architettura (Dual-Layer)
+
+```
+src/index.ts (outer shell)
+  ├── Init immediato (fire-and-forget)
+  ├── Hot-reload detection (worktree cached to ~/.true-mem/.worktree-cache)
+  ├── Toast notification
+  └── Thin hook wrappers → delega a:
+        src/adapters/opencode/index.ts (inner adapter)
+          ├── experimental.chat.system.transform  → Main injection
+          ├── tool.execute.before                  → Sub-agent injection
+          ├── chat.message                         → List-memories command
+          ├── event                                → Session lifecycle + queue extraction
+          └── experimental.session.compacting      → Compact detection
+```
+
+### WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Memory classification logic | `src/memory/classifier.ts` | Four-layer defense entry point |
+| Multilingual negative patterns | `src/memory/negative-patterns.ts` | 15 languages, false-positive prevention |
+| Keyword/scope patterns | `src/memory/patterns.ts` | GLOBAL_SCOPE_KEYWORDS, marker detection |
+| Jaccard similarity matching | `src/memory/similarity.ts` | Default matching (no embeddings) |
+| NLP embeddings (optional) | `src/memory/embeddings-nlp.ts` + `src/memory/embedding-worker.ts` | Node.js child process, lazy-loaded |
+| Hook implementations | `src/adapters/opencode/index.ts` | All OpenCode hook handlers |
+| Memory injection formatting | `src/adapters/opencode/injection.ts` | XML wrapping, token budgeting |
+| Session lifecycle | `src/adapters/opencode/session-manager.ts` | Created/idle/end detection |
+| Config system | `src/config/config.ts` + `src/config/state.ts` | JSONC parsing, env override, migration |
+| Database layer | `src/storage/database.ts` | SQLite adapter, schema migrations |
+| Extraction queue | `src/extraction/queue.ts` | Sequential async, debounce, context cache |
+| Plugin entry point | `src/index.ts` | Fire-and-forget init, dual-layer bridge |
+| Type definitions | `src/types/config.ts` + `src/types/database.ts` | DEFAULT_USER_CONFIG, MemoryUnit types |
+| Build/publish CI | `.github/workflows/release.yml` | npm publish on main push |
+| User-facing docs | `README.md` | Full feature documentation |
+| Release history | `CHANGELOG.md` | Version changes |
+
+### Estrazione Memorie (Interni)
+
+- **Role-aware classification**: Human messages weighted 10x vs Assistant
+- **Four-layer defense**: Question detection → Negative patterns → Multi-keyword sentence-level → Confidence >= 0.6
+- **Extraction queue**: Sequenziale asincrona (previene race conditions)
+- **Debounce**: 2s minimo tra estrazioni + 500ms debounce su singolo messaggio
+- **Context cache**: 5s TTL per evitare ri-estrazione su messaggi identici
+- **Content hash deduplication**: SHA-256 hash per O(1) exact duplicate detection nel database
+- **Pre-filtri**: URL >150 char, contenuti >500 char → skip
+
+### Injection Format
+
+```xml
+<true_memory_context type="global" worktree="/path/to/project">
+  <persona_boundary>
+    <memory classification="preference" store="LTM" strength="0.85">
+      Memory content here
+    </memory>
+  </persona_boundary>
+</true_memory_context>
+```
+
+- **Dynamic allocation**: 30% global min, 30% project min, 40% flexible
+- **Token budget**: 4000 max per injection
+- **Jaccard similarity**: Default matching (no embeddings)
+- **NLP embeddings**: Optional via Node.js worker process (`embedding-worker.ts`)
+
+### Shutdown
+
+- **NO signal handlers** (`process.on('SIGINT')`) — causano eccezioni C++ in Bun
+- **ShutdownManager**: Handlers LIFO, database close sincrono chiamato all'uscita del plugin
+
 ---
 
 ## Memory Injection
@@ -90,29 +159,28 @@ export TRUE_MEM_MAX_MEMORIES=25  # Più contesto
 export TRUE_MEM_MAX_MEMORIES=15  # Meno token
 ```
 
-### Injection Mode Configuration (v1.3.0)
+### Injection Mode Configuration (v1.3.0+)
 
 | Mode | Value | Behavior | Token Savings |
 |------|-------|----------|---------------|
 | SESSION_START | 0 | Inject only at session start | ~76% |
 | ALWAYS | 1 | Inject on every prompt (DEFAULT) | 0% |
 
-**Environment Variables:**
+**Default**: `1` (ALWAYS), defined in `src/types/config.ts` → `DEFAULT_USER_CONFIG`.
 
 **Environment Variables:**
 
 - `TRUE_MEM_STORAGE_LOCATION` - legacy=~/.true-mem/ (default), opencode=~/.config/opencode/true-mem/
   - **Auto-migration**: When changed, data is automatically copied from old to new location (not moved)
   - Original data is preserved as backup - safe to delete old folder after migration if desired
-- `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START (default), 1=ALWAYS
+- `TRUE_MEM_INJECTION_MODE` - 0=SESSION_START, 1=ALWAYS (default)
 - `TRUE_MEM_SUBAGENT_MODE` - 0=DISABLED, 1=ENABLED (default)
 - `TRUE_MEM_MAX_MEMORIES` - Default 20
 - `TRUE_MEM_EMBEDDINGS` - 0=Jaccard only (default), 1=Hybrid
 
-**v1.3.2**: Default injectionMode changed to 0 (SESSION_START) for token efficiency
-**Phase 1**: Mode 1 = inject every prompt, Mode 0 = inject once per session
-**Phase 2**: Session resume detection - skips if context already present
-**Phase 3**: Controls injection into task/background_task prompts
+### Sub-Agent Injection
+
+Sub-agent tasks are detected via the `-task-` heuristic in session IDs. When `TRUE_MEM_SUBAGENT_MODE=1` (default), memories are also injected into task/background_task sub-agent prompts using the `tool.execute.before` hook. Each sub-agent gets its own session-scoped context.
 
 ---
 
@@ -178,9 +246,10 @@ Per memorizzare in **GLOBAL scope**, il testo deve contenere keyword globale:
 - `@opencode-ai/plugin` - OpenCode plugin SDK
 - `@opencode-ai/sdk` - OpenCode SDK  
 - `uuid` - UUID generation
+- `@huggingface/transformers` ^4.0.0 - NLP embeddings (optional, lazy-loaded)
 
 **CRITICAL:**
-- Build: `bun build` (NON esbuild - crasha in OpenCode)
+- Build: `bun build src/index.ts --outdir dist --target bun --format esm && tsc --emitDeclarationOnly && bun build src/memory/embedding-worker.ts --outdir dist/memory --target bun --format esm` (NON esbuild - crasha in OpenCode)
 - SQLite: built-in (bun:sqlite / node:sqlite)
 
 ---
@@ -207,8 +276,6 @@ sqlite3 ~/.true-mem/memory.db "UPDATE memory_units SET status='deleted' WHERE id
 ---
 
 ## Release Workflow (GitHub Actions)
-
-### Workflow Completo
 
 ```bash
 # 1. Commit feature su develop (se non già fatto)

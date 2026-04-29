@@ -226,7 +226,7 @@ export function generateConfigWithComments(config: TrueMemUserConfig): string {
 /**
  * Save user configuration to disk
  */
-export function saveConfig(config: Partial<TrueMemUserConfig>): void {
+export function saveConfig(config: Partial<TrueMemUserConfig>): boolean {
   try {
     const currentConfig = loadConfig();
     const newConfig: TrueMemUserConfig = { ...currentConfig, ...config };
@@ -240,8 +240,10 @@ export function saveConfig(config: Partial<TrueMemUserConfig>): void {
     
     writeFileSync(configFile, generateConfigWithComments(newConfig));
     log(`Config: Saved to ${configFile}`);
+    return true;
   } catch (err) {
     log(`Config: Error saving: ${err}`);
+    return false;
   }
 }
 

@@ -12,6 +12,7 @@
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Viewer](#viewer)
 - [Advanced: Semantic Embeddings (Experimental)](#advanced-semantic-embeddings-experimental)
 - [Architecture](#architecture)
 - [Memory Classifications](#memory-classifications)
@@ -74,6 +75,7 @@ What makes True-Mem different from a simple database? It's modeled after how hum
 | **Multilingual** | Full support for Italian, Spanish, French, German, and 11 more languages |
 | **Smart Decay** | Only episodic memories fade; preferences and decisions stay forever |
 | **Zero Native Dependencies** | Works on Bun and Node 22+ with built-in SQLite |
+| **Local Viewer** | Chinese web UI for browsing, filtering, monitoring, and configuring memories on localhost |
 | **Multilingual** | Full support for Italian, Spanish, French, German, and 11 more languages |
 
 ---
@@ -208,6 +210,35 @@ When you change `storageLocation` (via config or env var), True-Mem automaticall
 ---
 
 ## Usage
+
+### Viewer
+
+True-Mem includes a local Chinese web viewer for single-user memory inspection and management.
+
+```bash
+bun run build
+bun run viewer
+```
+
+Open `http://127.0.0.1:3456` in your browser. The Viewer is bound to loopback by default and reads the active SQLite database from the configured storage location.
+
+The Viewer provides four tabs:
+
+| Tab | Purpose |
+|-----|---------|
+| 记忆列表 | Search, filter, expand details, soft delete/restore, and reclassify memory entries |
+| 数据统计 | Charts for store, classification, creation trend, status, project, and strength metrics |
+| 运行监控 | SQLite-inferred activity, errors, active sessions, memory health, and recent events |
+| 设置 | Edit `config.jsonc` values such as storage location, injection mode, sub-agent mode, embeddings, and max memories |
+
+For development, run the backend and Vite UI separately:
+
+```bash
+bun run viewer
+bun run viewer:dev
+```
+
+The development UI proxies `/api/*` to `http://127.0.0.1:3456`.
 
 ### Automatic Extraction
 
