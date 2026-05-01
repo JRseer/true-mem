@@ -42,11 +42,12 @@ export interface StorageEventPort {
 
 export interface StorageReadPort {
   getMemory(memoryId: string): MemoryUnit | null;
-  getMemoriesByScope(currentProject?: string, limit?: number, store?: MemoryStore): MemoryUnit[];
+  getMemoriesByScope(currentProject?: string, limit?: number, store?: MemoryStore, sessionId?: string): MemoryUnit[];
   vectorSearch(
     queryTextOrEmbedding: Float32Array | string,
     currentProject?: string,
-    limit?: number
+    limit?: number,
+    sessionId?: string
   ): Promise<MemoryUnit[]>;
 }
 

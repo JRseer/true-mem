@@ -1,19 +1,8 @@
 import { extractCleanSummary } from '../../adapters/opencode/message-parser.js';
-import {
-  calculateRoleWeightedScore,
-  classifyWithRoleAwareness,
-  shouldStoreMemory,
-} from '../../memory/classifier.js';
-import {
-  extractProjectTerms,
-  hasGlobalScopeKeyword,
-  matchAllPatterns,
-  shouldBeProjectScope,
-} from '../../memory/patterns.js';
+import { createV1TrueMemDomainAdapter, type TrueMemDomainPort } from '../../domain/index.js';
 import type { PipelineContext, WorkflowStep } from '../types.js';
 import type { MemoryCreateFeatures, StorageWritePort } from '../../storage/port.js';
 import type {
-  ImportanceSignal,
   MemoryClassification,
   MemoryStore,
   MemoryUnit,
@@ -27,24 +16,7 @@ export const MEMORY_INGEST_DEDUPE_STEP_NAME = 'ingest.dedupe';
 export const MEMORY_INGEST_PERSIST_STEP_NAME = 'ingest.persist';
 export const MEMORY_INGEST_STEP_VERSION = '0.1.0';
 
-const USER_LEVEL_CLASSIFICATIONS: readonly MemoryClassification[] = [
-  'constraint',
-  'preference',
-  'learning',
-  'procedural',
-];
-
-const AUTO_PROMOTE_CLASSIFICATIONS: readonly MemoryClassification[] = ['learning', 'decision'];
-
-const SUPPORTED_CLASSIFICATIONS: readonly MemoryClassification[] = [
-  'episodic',
-  'semantic',
-  'procedural',
-  'learning',
-  'preference',
-  'decision',
-  'constraint',
-];
+const DEFAULT_DOMAIN_PORT = createV1TrueMemDomainAdapter();
 
 export interface MemoryIngestDecision {
   readonly store: boolean;
@@ -92,10 +64,6 @@ function readBoolean(metadata: IngestMetadata, key: string): boolean {
   return metadata[key] === true;
 }
 
-function isMemoryClassification(value: string | null): value is MemoryClassification {
-  return value !== null && SUPPORTED_CLASSIFICATIONS.includes(value as MemoryClassification);
-}
-
 function isMemoryIngestDecision(value: unknown): value is MemoryIngestDecision {
   return typeof value === 'object' && value !== null && 'store' in value && 'reason' in value;
 }
@@ -111,6 +79,26 @@ function isStorageWritePort(value: unknown): value is StorageWritePort {
 
   const candidate = value as Partial<StorageWritePort>;
   return typeof candidate.createMemory === 'function';
+}
+
+function isTrueMemDomainPort(value: unknown): value is TrueMemDomainPort {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<TrueMemDomainPort>;
+  return typeof candidate.matchImportanceSignals === 'function'
+    && typeof candidate.calculateBaseSignalScore === 'function'
+    && typeof candidate.calculateRoleWeightedScore === 'function'
+    && typeof candidate.classifyWithRoleAwareness === 'function'
+    && typeof candidate.shouldStoreMemory === 'function'
+    && typeof candidate.resolveProjectScope === 'function'
+    && typeof candidate.resolveStore === 'function';
+}
+
+function getDomainPort(metadata: IngestMetadata): TrueMemDomainPort {
+  const candidate = metadata.domainPort ?? metadata.domain;
+  return isTrueMemDomainPort(candidate) ? candidate : DEFAULT_DOMAIN_PORT;
 }
 
 function createSkipDecision(reason: string, isolatedContent = ''): MemoryIngestDecision {
@@ -129,45 +117,6 @@ function createSkipDecision(reason: string, isolatedContent = ''): MemoryIngestD
 function getRecentMessages(metadata: IngestMetadata, text: string): string[] {
   const recentMessages = readStringArray(metadata, 'recentMessages');
   return recentMessages.length > 0 ? recentMessages : [text];
-}
-
-function resolveProjectScope(
-  classification: MemoryClassification,
-  text: string,
-  worktree: string | undefined,
-  metadata: IngestMetadata
-): string | null | undefined {
-  if (!worktree) {
-    return undefined;
-  }
-
-  if (!USER_LEVEL_CLASSIFICATIONS.includes(classification)) {
-    return worktree;
-  }
-
-  const context = {
-    recentMessages: getRecentMessages(metadata, text),
-    worktree,
-    projectTerms: extractProjectTerms(worktree),
-  };
-  const scopeDecision = shouldBeProjectScope(text, context, hasGlobalScopeKeyword(text));
-  return scopeDecision.isProjectScope ? worktree : null;
-}
-
-function resolveStore(classification: MemoryClassification, confidence: number): MemoryStore {
-  const isExplicitIntent = confidence >= 0.85;
-  const shouldPromoteToLtm = classification !== 'episodic'
-    && (isExplicitIntent || AUTO_PROMOTE_CLASSIFICATIONS.includes(classification));
-
-  return shouldPromoteToLtm ? 'ltm' : 'stm';
-}
-
-function calculateBaseSignalScore(signals: readonly ImportanceSignal[]): number {
-  if (signals.length === 0) {
-    return 0;
-  }
-
-  return signals.reduce((sum, signal) => sum + signal.weight, 0) / signals.length;
 }
 
 export const MEMORY_INGEST_NORMALIZE_STEP: WorkflowStep<PipelineContext> = {
@@ -192,13 +141,14 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
   produces: ['ingestDecision'],
   execute: (context) => {
     const text = readString(context.metadata, 'normalizedText') ?? '';
+    const domain = getDomainPort(context.metadata);
 
     if (!text.trim()) {
       context.metadata.ingestDecision = createSkipDecision('empty_text');
       return context;
     }
 
-    const signals = matchAllPatterns(text);
+    const signals = domain.matchImportanceSignals(text);
     context.metadata.signals = signals;
 
     if (signals.length === 0) {
@@ -207,15 +157,15 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
     }
 
     const role = readRole(context.metadata);
-    const baseSignalScore = calculateBaseSignalScore(signals);
+    const baseSignalScore = domain.calculateBaseSignalScore(signals);
     const fullConversation = readString(context.metadata, 'fullConversation') ?? text;
     const roleAwareContext: RoleAwareContext = {
       primaryRole: role,
-      roleWeightedScore: calculateRoleWeightedScore(baseSignalScore, role, text),
+      roleWeightedScore: domain.calculateRoleWeightedScore(baseSignalScore, role, text),
       hasAssistantContext: readBoolean(context.metadata, 'hasAssistantContext'),
       fullConversation,
     };
-    const classificationResult = classifyWithRoleAwareness(text, signals, roleAwareContext);
+    const classificationResult = domain.classifyWithRoleAwareness(text, signals, roleAwareContext);
     const cleanSummary = extractCleanSummary(classificationResult.isolatedContent);
 
     if (/https?:\/\/[^\s]{150,}/.test(classificationResult.isolatedContent)) {
@@ -228,7 +178,7 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
       return context;
     }
 
-    if (!isMemoryClassification(classificationResult.classification)) {
+    if (!classificationResult.classification) {
       context.metadata.ingestDecision = createSkipDecision('no_classification_found', classificationResult.isolatedContent);
       return context;
     }
@@ -248,18 +198,19 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
       return context;
     }
 
-    const storageDecision = shouldStoreMemory(
+    const storageDecision = domain.shouldStoreMemory(
       classificationResult.isolatedContent,
       classificationResult.classification,
       baseSignalScore
     );
     const worktree = readString(context.metadata, 'worktree');
-    const projectScope = resolveProjectScope(
-      classificationResult.classification,
-      text,
-      worktree,
-      context.metadata
-    );
+    const projectScope = worktree
+      ? domain.resolveProjectScope(classificationResult.classification, text, {
+          recentMessages: getRecentMessages(context.metadata, text),
+          worktree,
+        }).projectScope
+      : undefined;
+    const storeDecision = domain.resolveStore(classificationResult.classification, classificationResult.confidence);
 
     context.metadata.ingestDecision = {
       store: storageDecision.store,
@@ -271,7 +222,7 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
       roleValidated: true,
       validationReason: classificationResult.validationReason,
       baseSignalScore,
-      storeTarget: resolveStore(classificationResult.classification, classificationResult.confidence),
+      storeTarget: storeDecision.storeTarget,
       projectScope,
     } satisfies MemoryIngestDecision;
 

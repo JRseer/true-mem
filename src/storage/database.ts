@@ -690,11 +690,32 @@ export class MemoryDatabase implements StorageProvider {
     return this.rowToMemoryUnit(row);
   }
 
-  getMemoriesByScope(currentProject?: string, limit: number = 20, store?: MemoryStore): MemoryUnit[] {
+  getMemoriesByScope(currentProject?: string, limit: number = 20, store?: MemoryStore, sessionId?: string): MemoryUnit[] {
     this.ensureInit();
 
     const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
     const userClassPlaceholders = userLevelClassifications.map(() => '?').join(', ');
+
+    // Session scope: filter by session_id exclusively (session IS the scope boundary)
+    if (sessionId) {
+      const params: any[] = [sessionId];
+      let query = `
+        SELECT * FROM memory_units
+        WHERE status = 'active'
+        AND session_id = ?
+      `;
+
+      if (store) {
+        query += ` AND store = ?`;
+        params.push(store);
+      }
+
+      query += ` ORDER BY strength DESC LIMIT ?`;
+      params.push(limit);
+
+      const rows = this.db.prepare(query).all(...params) as any[];
+      return rows.map(this.rowToMemoryUnit.bind(this));
+    }
 
     // Check if currentProject is valid (not empty, not just '/')
     const hasValidProject = currentProject && currentProject !== '/' && currentProject.length > 1;
@@ -746,7 +767,7 @@ export class MemoryDatabase implements StorageProvider {
    * @param currentProject - Current project scope
    * @param limit - Maximum number of results
    */
-  async vectorSearch(queryTextOrEmbedding: Float32Array | string, currentProject?: string, limit: number = 10): Promise<MemoryUnit[]> {
+  async vectorSearch(queryTextOrEmbedding: Float32Array | string, currentProject?: string, limit: number = 10, sessionId?: string): Promise<MemoryUnit[]> {
     this.ensureInit();
 
     // Handle both string query and Float32Array (for backward compatibility)
@@ -757,10 +778,31 @@ export class MemoryDatabase implements StorageProvider {
     // Fallback: return top memories by strength when query is empty
     if (queryText.trim().length === 0) {
       log('vectorSearch: Empty query, falling back to strength-sorted memories');
-      const allMemories = this.getMemoriesByScope(currentProject, limit * 2);
+      const allMemories = this.getMemoriesByScope(currentProject, limit * 2, undefined, sessionId);
       return allMemories
         .sort((a, b) => b.strength - a.strength)
         .slice(0, limit);
+    }
+
+    // Session scope: filter by session_id exclusively
+    if (sessionId) {
+      const rows = this.db.prepare(`
+        SELECT * FROM memory_units
+        WHERE status = 'active'
+        AND session_id = ?
+        LIMIT 1000
+      `).all(sessionId) as any[];
+
+      const memories = rows.map(this.rowToMemoryUnit.bind(this));
+      const pairs = memories.map(memory => ({ text1: queryText, text2: memory.summary }));
+      const similarities = await getSimilarityBatch(pairs);
+
+      const results = memories
+        .map((memory, i) => ({ memory, similarity: similarities[i] ?? 0 }))
+        .sort((a, b) => b.similarity - a.similarity);
+
+      log(`vectorSearch(session): ${results.length} memories, top similarity: ${results[0]?.similarity.toFixed(3) ?? 'N/A'}`);
+      return results.slice(0, limit).map((r) => r.memory);
     }
 
     // Fetch all active memories for the current scope (same logic as getMemoriesByScope)

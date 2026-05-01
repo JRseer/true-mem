@@ -7,7 +7,7 @@
 /**
  * Config version - bump when adding new fields
  */
-export const CONFIG_VERSION = 1;
+export const CONFIG_VERSION = 2;
 
 /**
  * Injection mode types
@@ -30,6 +30,11 @@ export type ShadowIngestMode = 0 | 1;
 export type IngestWriteMode = 0 | 1;
 
 /**
+ * Retrieve pipeline mode types
+ */
+export type RetrievePipelineMode = 0 | 1;
+
+/**
  * Storage location type
  */
 export type StorageLocation = 'legacy' | 'opencode';
@@ -45,6 +50,7 @@ export interface TrueMemUserConfig {
   embeddingsEnabled: number;
   shadowIngestEnabled: ShadowIngestMode;
   ingestWriteEnabled: IngestWriteMode;
+  retrievePipelineEnabled: RetrievePipelineMode;
   storageLocation: StorageLocation;
 }
 
@@ -58,6 +64,7 @@ export const DEFAULT_USER_CONFIG: TrueMemUserConfig = {
   embeddingsEnabled: 0,
   shadowIngestEnabled: 0,
   ingestWriteEnabled: 0,
+  retrievePipelineEnabled: 0,
   storageLocation: 'legacy',
 };
 

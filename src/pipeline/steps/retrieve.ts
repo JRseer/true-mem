@@ -11,12 +11,14 @@ import type { WorkflowStep } from '../types.js';
 
 export const MEMORY_RETRIEVE_SCOPE_STEP_NAME = 'retrieve.scope';
 export const MEMORY_RETRIEVE_SQLITE_STEP_NAME = 'retrieve.sqlite';
+export const MEMORY_RETRIEVE_QUERY_STEP_NAME = 'retrieve.query';
 export const MEMORY_RETRIEVE_VECTOR_HINT_STEP_NAME = 'retrieve.vector_hint';
 export const MEMORY_RETRIEVE_STEP_VERSION = '0.1.0';
 
 export interface MemoryRetrieveScopeDecision {
-  readonly visibility: 'global' | 'project';
+  readonly visibility: 'global' | 'project' | 'session';
   readonly project?: string | undefined;
+  readonly session?: string | undefined;
 }
 
 export interface MemoryRetrieveResult {
@@ -105,7 +107,15 @@ function getQueryVector(context: ScopedPipelineContext): readonly number[] | und
 
 function resolveRetrieveScope(context: ScopedPipelineContext): MemoryRetrieveScopeDecision {
   if (context.scope.visibility === 'session') {
-    throw new Error('memory.retrieve does not support session visibility until storage has session-scoped SQL filtering');
+    if (!context.scope.session || context.scope.session.trim().length === 0) {
+      throw new Error('memory.retrieve session visibility requires scope.session');
+    }
+
+    return {
+      visibility: 'session',
+      project: context.scope.project,
+      session: context.scope.session,
+    };
   }
 
   if (context.scope.visibility === 'project') {
@@ -137,7 +147,7 @@ function isRetrieveScope(value: unknown): value is MemoryRetrieveScopeDecision {
     return false;
   }
 
-  return value.visibility === 'global' || value.visibility === 'project';
+  return value.visibility === 'global' || value.visibility === 'project' || value.visibility === 'session';
 }
 
 function getRetrievedMemories(context: ScopedPipelineContext): readonly MemoryUnit[] {
@@ -187,7 +197,31 @@ export const MEMORY_RETRIEVE_SQLITE_STEP: WorkflowStep<ScopedPipelineContext> = 
   execute: (context) => {
     const storage = getStorageReadPort(context);
     const scope = getRetrieveScope(context);
-    const memories = storage.getMemoriesByScope(scope.project, getLimit(context), getStore(context));
+    const memories = storage.getMemoriesByScope(scope.project, getLimit(context), getStore(context), scope.session);
+    const metadata = createNormalRetrievalMetadata('sqlite', new Date());
+
+    context.metadata.retrievedMemories = memories;
+    createResult(context, metadata);
+    return context;
+  },
+};
+
+export const MEMORY_RETRIEVE_QUERY_STEP: WorkflowStep<ScopedPipelineContext> = {
+  name: MEMORY_RETRIEVE_QUERY_STEP_NAME,
+  version: MEMORY_RETRIEVE_STEP_VERSION,
+  requires: ['retrieveScope', 'retrievedMemories', 'retrievalMetadata', 'retrieveResult'],
+  produces: ['retrievedMemories', 'retrievalMetadata', 'retrieveResult'],
+  execute: async (context) => {
+    const query = getQuery(context);
+
+    if (!query) {
+      createResult(context, context.metadata.retrievalMetadata as RetrievalMetadata);
+      return context;
+    }
+
+    const storage = getStorageReadPort(context);
+    const scope = getRetrieveScope(context);
+    const memories = await storage.vectorSearch(query, scope.project, getLimit(context), scope.session);
     const metadata = createNormalRetrievalMetadata('sqlite', new Date());
 
     context.metadata.retrievedMemories = memories;
@@ -235,5 +269,6 @@ export const MEMORY_RETRIEVE_VECTOR_HINT_STEP: WorkflowStep<ScopedPipelineContex
 export const MEMORY_RETRIEVE_WORKFLOW_STEPS: readonly WorkflowStep<ScopedPipelineContext>[] = [
   MEMORY_RETRIEVE_SCOPE_STEP,
   MEMORY_RETRIEVE_SQLITE_STEP,
+  MEMORY_RETRIEVE_QUERY_STEP,
   MEMORY_RETRIEVE_VECTOR_HINT_STEP,
 ];

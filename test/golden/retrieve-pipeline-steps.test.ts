@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MEMORY_RETRIEVE_PIPELINE_NAME,
+  MEMORY_RETRIEVE_QUERY_STEP_NAME,
   MEMORY_RETRIEVE_SCOPE_STEP_NAME,
   MEMORY_RETRIEVE_SQLITE_STEP_NAME,
   MEMORY_RETRIEVE_VECTOR_HINT_STEP_NAME,
@@ -16,9 +17,12 @@ import {
 import type { MemoryUnit } from '../../src/types.js';
 
 interface ReadCall {
+  readonly path: 'scope' | 'query';
   readonly currentProject?: string | undefined;
   readonly limit?: number | undefined;
   readonly store?: 'stm' | 'ltm' | undefined;
+  readonly query?: string | undefined;
+  readonly sessionId?: string | undefined;
 }
 
 function createDeterministicManager(): PipelineManager {
@@ -64,11 +68,20 @@ function createMemory(id: string, summary: string, projectScope?: string): Memor
 function createStoragePort(memories: readonly MemoryUnit[], calls: ReadCall[]): StorageReadPort {
   return {
     getMemory: memoryId => memories.find(memory => memory.id === memoryId) ?? null,
-    getMemoriesByScope: (currentProject, limit, store) => {
-      calls.push({ currentProject, limit, store });
+    getMemoriesByScope: (currentProject, limit, store, sessionId) => {
+      calls.push({ path: 'scope', currentProject, limit, store, sessionId });
       return memories.slice(0, limit ?? memories.length);
     },
-    vectorSearch: async () => [...memories],
+    vectorSearch: async (query, currentProject, limit, sessionId) => {
+      calls.push({
+        path: 'query',
+        currentProject,
+        limit,
+        query: typeof query === 'string' ? query : '[embedding]',
+        sessionId,
+      });
+      return [...memories].reverse().slice(0, limit ?? memories.length);
+    },
   };
 }
 
@@ -103,7 +116,7 @@ describe('golden: memory.retrieve pipeline steps', () => {
       },
     }, manager);
 
-    expect(calls).toEqual([{ currentProject: 'truemem', limit: 2, store: 'ltm' }]);
+    expect(calls).toEqual([{ path: 'scope', currentProject: 'truemem', limit: 2, store: 'ltm' }]);
     expect(result.metadata.retrieveScope).toEqual({ visibility: 'project', project: 'truemem' });
     expect(result.metadata.retrievedMemories).toEqual(memories);
     expect(result.metadata.retrieveResult).toMatchObject({
@@ -119,8 +132,40 @@ describe('golden: memory.retrieve pipeline steps', () => {
       steps: [
         { name: MEMORY_RETRIEVE_SCOPE_STEP_NAME, status: 'completed' },
         { name: MEMORY_RETRIEVE_SQLITE_STEP_NAME, status: 'completed' },
+        { name: MEMORY_RETRIEVE_QUERY_STEP_NAME, status: 'completed' },
         { name: MEMORY_RETRIEVE_VECTOR_HINT_STEP_NAME, status: 'completed' },
       ],
+    });
+  });
+
+  it('uses legacy query ranking after SQLite scope verification when query is present', async () => {
+    const calls: ReadCall[] = [];
+    const sqliteOrder = [
+      createMemory('sqlite-first', 'SQLite fact source candidate', 'truemem'),
+      createMemory('query-first', 'TypeScript query match', 'truemem'),
+    ];
+
+    const result = await runMemoryRetrievePipeline({
+      metadata: {
+        storage: createStoragePort(sqliteOrder, calls),
+        query: 'TypeScript query',
+        limit: 2,
+      },
+      scope: {
+        project: 'trueMem',
+        source: 'user',
+      },
+    }, createDeterministicManager());
+
+    expect(calls).toEqual([
+      { path: 'scope', currentProject: 'truemem', limit: 2, store: undefined },
+      { path: 'query', currentProject: 'truemem', limit: 2, query: 'TypeScript query' },
+    ]);
+    expect(result.metadata.retrievedMemories).toEqual([...sqliteOrder].reverse());
+    expect(result.metadata.retrieveResult).toMatchObject({
+      memories: [...sqliteOrder].reverse(),
+      query: 'TypeScript query',
+      metadata: { mode: 'normal', source: 'sqlite' },
     });
   });
 
@@ -139,7 +184,7 @@ describe('golden: memory.retrieve pipeline steps', () => {
       },
     }, createDeterministicManager());
 
-    expect(calls).toEqual([{ currentProject: undefined, limit: 1, store: undefined }]);
+    expect(calls).toEqual([{ path: 'scope', currentProject: undefined, limit: 1, store: undefined }]);
     expect(result.metadata.retrieveScope).toEqual({ visibility: 'global' });
     expect(result.metadata.retrieveResult).toMatchObject({
       memories,
@@ -147,23 +192,29 @@ describe('golden: memory.retrieve pipeline steps', () => {
     });
   });
 
-  it('rejects session visibility until storage can enforce session SQL filters', async () => {
+  it('filters by session_id when scope visibility is session', async () => {
     const calls: ReadCall[] = [];
+    const memories = [createMemory('session-mem', 'Session-scoped preference')];
 
-    await expect(runMemoryRetrievePipeline({
+    const result = await runMemoryRetrievePipeline({
       metadata: {
-        storage: createStoragePort([], calls),
+        storage: createStoragePort(memories, calls),
+        limit: 3,
       },
       scope: {
         project: 'trueMem',
         session: 'session-1',
         source: 'user',
       },
-    }, createDeterministicManager())).rejects.toThrow(
-      'memory.retrieve does not support session visibility until storage has session-scoped SQL filtering'
-    );
+    }, createDeterministicManager());
 
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([{ path: 'scope', currentProject: 'truemem', limit: 3, store: undefined, sessionId: 'session-1' }]);
+    expect(result.metadata.retrieveScope).toEqual({ visibility: 'session', project: 'truemem', session: 'session-1' });
+    expect(result.metadata.retrievedMemories).toEqual(memories);
+    expect(result.metadata.retrieveResult).toMatchObject({
+      memories,
+      scope: { visibility: 'session', project: 'truemem', session: 'session-1' },
+    });
   });
 
   it('records degraded vector metadata while keeping SQLite memories authoritative', async () => {
@@ -184,7 +235,7 @@ describe('golden: memory.retrieve pipeline steps', () => {
       },
     }, createDeterministicManager());
 
-    expect(calls).toEqual([{ currentProject: 'truemem', limit: 5, store: undefined }]);
+    expect(calls).toEqual([{ path: 'scope', currentProject: 'truemem', limit: 5, store: undefined }]);
     expect(result.metadata.retrievedMemories).toEqual(memories);
     expect(result.metadata.retrieveResult).toMatchObject({
       memories,

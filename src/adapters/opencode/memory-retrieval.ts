@@ -1,6 +1,10 @@
 import type { MemoryUnit } from '../../types.js';
 import type { TrueMemoryAdapterState } from './index.js';
 import { log } from '../../logger.js';
+import {
+  getQueryMemoriesWithRetrievePipelineFallback,
+  getScopeMemoriesWithRetrievePipelineFallback,
+} from './retrieve-pipeline-routing.js';
 
 /**
  * Extract a clean summary from conversation text.
@@ -9,10 +13,28 @@ import { log } from '../../logger.js';
 export async function getRelevantMemories(state: TrueMemoryAdapterState, limit: number, query?: string): Promise<MemoryUnit[]> {
   if (query) {
     // Use Jaccard similarity search (text-based, no embeddings)
-    return state.db.vectorSearch(query, state.worktree, limit);
+    return getQueryMemoriesWithRetrievePipelineFallback(
+      state.db,
+      query,
+      state.worktree,
+      limit,
+      {
+        manager: state.pipelineManager,
+        source: 'tool',
+      }
+    );
   } else {
     // Fall back to scope-based retrieval
-    return state.db.getMemoriesByScope(state.worktree, limit);
+    return getScopeMemoriesWithRetrievePipelineFallback(
+      state.db,
+      state.worktree,
+      limit,
+      undefined,
+      {
+        manager: state.pipelineManager,
+        source: 'tool',
+      }
+    );
   }
 }
 

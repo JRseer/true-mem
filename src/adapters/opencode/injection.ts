@@ -5,18 +5,20 @@
 
 import type { MemoryUnit } from '../../types.js';
 import type { MemoryDatabase } from '../../storage/database.js';
+import type { StorageReadPort } from '../../storage/index.js';
 import { jaccardSimilarity } from '../../memory/embeddings.js';
 import { USER_LEVEL_CLASSIFICATIONS } from '../../types.js';
 import { log } from '../../logger.js';
+import {
+  getQueryMemoriesWithRetrievePipelineFallback,
+  getScopeMemoriesWithRetrievePipelineFallback,
+} from './retrieve-pipeline-routing.js';
 
 /**
  * Adapter state interface for injection operations
  */
 export interface InjectionState {
-  db: {
-    vectorSearch: (queryText: string, currentProject?: string, limit?: number) => Promise<MemoryUnit[]>;
-    getMemoriesByScope: (currentProject?: string, limit?: number) => MemoryUnit[];
-  };
+  db: StorageReadPort;
   worktree: string;
 }
 
@@ -89,7 +91,13 @@ export async function getAtomicMemories(
 ): Promise<MemoryUnit[]> {
   if (query && query.trim().length > 0) {
     // Use Jaccard similarity search (text-based, no embeddings)
-    return state.db.vectorSearch(query, state.worktree, limit);
+    return getQueryMemoriesWithRetrievePipelineFallback(
+      state.db,
+      query,
+      state.worktree,
+      limit,
+      { source: 'tool' }
+    );
   } else {
     // Fall back to scope-based retrieval
     return state.db.getMemoriesByScope(state.worktree, limit);
@@ -164,7 +172,13 @@ export async function selectMemoriesForInjection(
   const MAX_CONSTRAINTS = 10;
   
   // Step 1: Get all memories
-  const allMemories = db.getMemoriesByScope(worktree, 100);
+  const allMemories = await getScopeMemoriesWithRetrievePipelineFallback(
+    db,
+    worktree,
+    100,
+    undefined,
+    { source: 'unknown' }
+  );
   
   // Early return for small pools
   if (allMemories.length <= maxMemories) {
@@ -223,7 +237,13 @@ export async function selectMemoriesForInjection(
   const remainingSlots = maxMemories - memories.length;
   
   if (remainingSlots > 0 && embeddingsEnabled && queryContext.trim().length > 0) {
-    const relevant = await db.vectorSearch(queryContext, worktree, MAX_FLEXIBLE);
+    const relevant = await getQueryMemoriesWithRetrievePipelineFallback(
+      db,
+      queryContext,
+      worktree,
+      MAX_FLEXIBLE,
+      { source: 'unknown' }
+    );
     const existingIds = new Set(memories.map(m => m.id));
     const newMemories = relevant.filter(m => !existingIds.has(m.id));
     

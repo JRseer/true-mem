@@ -1,5 +1,11 @@
 export { PipelineManager } from './manager.js';
 export {
+  createMemoryDecayPipelineContext,
+  MEMORY_DECAY_PIPELINE_NAME,
+  MEMORY_DECAY_PIPELINE_VERSION,
+  runMemoryDecayPipeline,
+} from './decay.js';
+export {
   createMemoryIngestPipelineContext,
   MEMORY_INGEST_BOUNDARY_STEP_NAME,
   MEMORY_INGEST_BOUNDARY_STEP_VERSION,
@@ -8,6 +14,12 @@ export {
   MEMORY_INGEST_PIPELINE_VERSION,
   runMemoryIngestPipelineShell,
 } from './ingest.js';
+export {
+  createMemoryMaintenancePipelineContext,
+  MEMORY_MAINTENANCE_PIPELINE_NAME,
+  MEMORY_MAINTENANCE_PIPELINE_VERSION,
+  runMemoryMaintenancePipeline,
+} from './maintenance.js';
 export {
   createMemoryRetrievePipelineContext,
   MEMORY_RETRIEVE_PIPELINE,
@@ -22,6 +34,12 @@ export {
   writeMemoryIngestPipeline,
 } from './ingest-bridge.js';
 export {
+  MEMORY_DECAY_APPLY_STEP,
+  MEMORY_DECAY_APPLY_STEP_NAME,
+  MEMORY_DECAY_STEP_VERSION,
+  MEMORY_DECAY_WORKFLOW_STEPS,
+} from './steps/decay.js';
+export {
   MEMORY_INGEST_CLASSIFY_STEP,
   MEMORY_INGEST_CLASSIFY_STEP_NAME,
   MEMORY_INGEST_DEDUPE_STEP,
@@ -34,8 +52,16 @@ export {
   MEMORY_INGEST_WORKFLOW_STEPS,
 } from './steps/ingest.js';
 export {
+  MEMORY_MAINTENANCE_PLAN_STEP,
+  MEMORY_MAINTENANCE_PLAN_STEP_NAME,
+  MEMORY_MAINTENANCE_STEP_VERSION,
+  MEMORY_MAINTENANCE_WORKFLOW_STEPS,
+} from './steps/maintenance.js';
+export {
   MEMORY_RETRIEVE_SCOPE_STEP,
   MEMORY_RETRIEVE_SCOPE_STEP_NAME,
+  MEMORY_RETRIEVE_QUERY_STEP,
+  MEMORY_RETRIEVE_QUERY_STEP_NAME,
   MEMORY_RETRIEVE_SQLITE_STEP,
   MEMORY_RETRIEVE_SQLITE_STEP_NAME,
   MEMORY_RETRIEVE_STEP_VERSION,
@@ -61,7 +87,10 @@ export type {
   MemoryIngestWriteInput,
 } from './ingest-bridge.js';
 export type { MemoryIngestPipelineContext, MemoryIngestShellInput } from './ingest.js';
+export type { MemoryDecayPipelineInput } from './decay.js';
+export type { MemoryMaintenancePipelineInput } from './maintenance.js';
 export type { MemoryRetrievePipelineContext, MemoryRetrievePipelineInput } from './retrieve.js';
+export type { MemoryDecayResult } from './steps/decay.js';
 export type {
   MemoryIngestDecision,
   MemoryIngestDedupeDecision,

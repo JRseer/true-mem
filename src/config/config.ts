@@ -4,7 +4,7 @@
  * Loads and manages user configuration from config.json with env var override.
  * 
  * Priority (highest to lowest):
- * 1. Environment variables (TRUE_MEM_STORAGE_LOCATION, TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS, TRUE_MEM_INGEST_SHADOW, TRUE_MEM_INGEST_WRITE)
+ * 1. Environment variables (TRUE_MEM_STORAGE_LOCATION, TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS, TRUE_MEM_INGEST_SHADOW, TRUE_MEM_INGEST_WRITE, TRUE_MEM_RETRIEVE_PIPELINE)
  * 2. config.json file
  * 3. Default values
  * 
@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { log } from '../logger.js';
-import type { TrueMemUserConfig, InjectionMode, SubAgentMode, ShadowIngestMode, IngestWriteMode, StorageLocation } from '../types/config.js';
+import type { TrueMemUserConfig, InjectionMode, SubAgentMode, ShadowIngestMode, IngestWriteMode, RetrievePipelineMode, StorageLocation } from '../types/config.js';
 import { DEFAULT_USER_CONFIG } from '../types/config.js';
 import { parseJsonc } from '../utils/jsonc.js';
 import { getStorageDir } from './paths.js';
@@ -105,6 +105,16 @@ function validateIngestWriteEnabled(value: unknown): IngestWriteMode {
 }
 
 /**
+ * Validate retrieve pipeline routing from file config.
+ * Returns 0 or 1, or default if invalid.
+ */
+function validateRetrievePipelineEnabled(value: unknown): RetrievePipelineMode {
+  if (value === 0 || value === 1) return value;
+  log(`Config: Invalid retrievePipelineEnabled in file: ${value}, using default`);
+  return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+}
+
+/**
  * Parse embeddings enabled from env or return default
  * Returns 0 or 1 (number for JSONC config compatibility)
  */
@@ -148,6 +158,21 @@ function parseIngestWriteEnabled(envValue: string | undefined): IngestWriteMode 
   }
 
   return parseInt(envValue, 10) as IngestWriteMode;
+}
+
+/**
+ * Parse retrieve pipeline routing from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseRetrievePipelineEnabled(envValue: string | undefined): RetrievePipelineMode {
+  if (!envValue) return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_RETRIEVE_PIPELINE: ${envValue}, using default (${DEFAULT_USER_CONFIG.retrievePipelineEnabled})`);
+    return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+  }
+
+  return parseInt(envValue, 10) as RetrievePipelineMode;
 }
 
 /**
@@ -227,6 +252,7 @@ export function loadConfig(): TrueMemUserConfig {
   const envEmbeddingsEnabled = process.env.TRUE_MEM_EMBEDDINGS;
   const envShadowIngestEnabled = process.env.TRUE_MEM_INGEST_SHADOW;
   const envIngestWriteEnabled = process.env.TRUE_MEM_INGEST_WRITE;
+  const envRetrievePipelineEnabled = process.env.TRUE_MEM_RETRIEVE_PIPELINE;
   // envStorageLocation already parsed above
 
   const config: TrueMemUserConfig = {
@@ -251,10 +277,13 @@ export function loadConfig(): TrueMemUserConfig {
     ingestWriteEnabled: envIngestWriteEnabled !== undefined
       ? parseIngestWriteEnabled(envIngestWriteEnabled)
       : validateIngestWriteEnabled(fileConfig.ingestWriteEnabled),
+    retrievePipelineEnabled: envRetrievePipelineEnabled !== undefined
+      ? parseRetrievePipelineEnabled(envRetrievePipelineEnabled)
+      : validateRetrievePipelineEnabled(fileConfig.retrievePipelineEnabled),
   };
   
   // Log the final config
-  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}, shadowIngestEnabled=${config.shadowIngestEnabled}, ingestWriteEnabled=${config.ingestWriteEnabled}`);
+  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}, shadowIngestEnabled=${config.shadowIngestEnabled}, ingestWriteEnabled=${config.ingestWriteEnabled}, retrievePipelineEnabled=${config.retrievePipelineEnabled}`);
   
   return config;
 }
@@ -281,6 +310,9 @@ export function generateConfigWithComments(config: TrueMemUserConfig): string {
   
   // Ingest write cutover: 0 = disabled (default), 1 = route real writes through the new ingest pipeline persist step
   "ingestWriteEnabled": ${config.ingestWriteEnabled},
+  
+  // Retrieve pipeline: 0 = disabled (default), 1 = route scope-only reads through memory.retrieve pipeline with legacy fallback
+  "retrievePipelineEnabled": ${config.retrievePipelineEnabled},
   
   // Maximum memories to inject per prompt (10-50 recommended)
   "maxMemories": ${config.maxMemories}
@@ -352,4 +384,11 @@ export function getShadowIngestEnabledFromConfig(): ShadowIngestMode {
  */
 export function getIngestWriteEnabledFromConfig(): IngestWriteMode {
   return loadConfig().ingestWriteEnabled;
+}
+
+/**
+ * Get retrieve pipeline routing enabled from config (convenience function).
+ */
+export function getRetrievePipelineEnabledFromConfig(): RetrievePipelineMode {
+  return loadConfig().retrievePipelineEnabled;
 }
