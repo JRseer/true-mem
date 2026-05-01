@@ -20,6 +20,16 @@ export type InjectionMode = 0 | 1;
 export type SubAgentMode = 0 | 1;
 
 /**
+ * Shadow ingest mode types
+ */
+export type ShadowIngestMode = 0 | 1;
+
+/**
+ * Main ingest write cutover mode types
+ */
+export type IngestWriteMode = 0 | 1;
+
+/**
  * Storage location type
  */
 export type StorageLocation = 'legacy' | 'opencode';
@@ -33,6 +43,8 @@ export interface TrueMemUserConfig {
   subagentMode: SubAgentMode;
   maxMemories: number;
   embeddingsEnabled: number;
+  shadowIngestEnabled: ShadowIngestMode;
+  ingestWriteEnabled: IngestWriteMode;
   storageLocation: StorageLocation;
 }
 
@@ -44,6 +56,8 @@ export const DEFAULT_USER_CONFIG: TrueMemUserConfig = {
   subagentMode: 1,       // ENABLED
   maxMemories: 20,
   embeddingsEnabled: 0,
+  shadowIngestEnabled: 0,
+  ingestWriteEnabled: 0,
   storageLocation: 'legacy',
 };
 

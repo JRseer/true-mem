@@ -19,8 +19,16 @@ import type {
   PsychMemConfig,
 } from '../types.js';
 import type { StorageLocation } from '../types.js';
+import type { EventCreateOptions, MemoryCreateFeatures, StorageProvider } from './port.js';
+import type { DerivedIndexIdentity, DerivedIndexState } from './index-status.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
+import {
+  DERIVED_INDEX_STATES_SCHEMA_SQL,
+  derivedIndexIdentityParams,
+  derivedIndexStateParams,
+  parseDerivedIndexStateRow,
+} from './index-state-store.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
@@ -130,7 +138,7 @@ function getDatabasePathFromConfig(): string {
   return join(storageDir, 'memory.db');
 }
 
-export class MemoryDatabase {
+export class MemoryDatabase implements StorageProvider {
   private db!: SqliteDatabase;
   private config: PsychMemConfig;
   private initialized: boolean = false;
@@ -279,6 +287,9 @@ export class MemoryDatabase {
           CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
           CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
           CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memory_units(content_hash);
+
+          -- Derived index state table (SQLite fact source remains authoritative)
+          ${DERIVED_INDEX_STATES_SCHEMA_SQL}
         `);
 
         // Record schema version
@@ -371,6 +382,32 @@ export class MemoryDatabase {
         throw error;
       }
     }
+
+    // Migration to version 4: Add derived index state table for rebuildable vector infrastructure
+    if (currentVersion < 4) {
+      log('Applying migration v4: Adding derived index state table...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        this.db.exec(DERIVED_INDEX_STATES_SCHEMA_SQL);
+
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          4,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v4 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v4 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v4', rollbackError);
+        }
+        throw error;
+      }
+    }
   }
 
   // Session Operations
@@ -433,7 +470,7 @@ export class MemoryDatabase {
     sessionId: string,
     hookType: HookType,
     content: string,
-    options?: { toolName?: string; toolInput?: string; toolOutput?: string; metadata?: Record<string, unknown> }
+    options?: EventCreateOptions
   ): Event {
     this.ensureInit();
 
@@ -479,16 +516,7 @@ export class MemoryDatabase {
     classification: MemoryClassification,
     summary: string,
     sourceEventIds: string[],
-    features: Partial<{
-      sessionId: string;
-      projectScope: string | null | undefined;
-      importance: number;
-      utility: number;
-      novelty: number;
-      confidence: number;
-      tags: string[];
-      embedding: Float32Array;
-    }> = {}
+    features: Partial<MemoryCreateFeatures> = {}
   ): Promise<MemoryUnit> {
     this.ensureInit();
 
@@ -809,6 +837,51 @@ export class MemoryDatabase {
   promoteToLtm(memoryId: string): void {
     this.ensureInit();
     this.db.prepare(`UPDATE memory_units SET store = 'ltm', decay_rate = ?, updated_at = ? WHERE id = ?`).run(this.config.ltmDecayRate, new Date().toISOString(), memoryId);
+  }
+
+  // Derived Index State Operations
+  upsertDerivedIndexState(state: DerivedIndexState): void {
+    this.ensureInit();
+    this.db.prepare(`
+      INSERT INTO derived_index_states (
+        memory_id, memory_version, index_kind, provider_id, model, dimension,
+        status, updated_at, retry_count, error, degraded_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(memory_id, index_kind, provider_id, model, dimension) DO UPDATE SET
+        memory_version = excluded.memory_version,
+        status = excluded.status,
+        updated_at = excluded.updated_at,
+        retry_count = excluded.retry_count,
+        error = excluded.error,
+        degraded_reason = excluded.degraded_reason
+    `).run(...derivedIndexStateParams(state));
+  }
+
+  getDerivedIndexState(identity: DerivedIndexIdentity): DerivedIndexState | null {
+    this.ensureInit();
+    const row = this.db.prepare(`
+      SELECT * FROM derived_index_states
+      WHERE memory_id = ?
+      AND index_kind = ?
+      AND provider_id = ?
+      AND model = ?
+      AND dimension = ?
+      LIMIT 1
+    `).get(...derivedIndexIdentityParams(identity));
+
+    return row ? parseDerivedIndexStateRow(row) : null;
+  }
+
+  getRebuildableDerivedIndexStates(limit: number = 100): DerivedIndexState[] {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT * FROM derived_index_states
+      WHERE status IN ('not_indexed', 'failed', 'degraded', 'stale')
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `).all(limit);
+
+    return rows.map(parseDerivedIndexStateRow);
   }
 
   // Scoring
