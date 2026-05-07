@@ -1,6 +1,10 @@
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { Hono } from 'hono';
-import type { MonitorStatus } from '../../shared/types.js';
+import type { DerivedIndexSummary, MonitorStatus, UpgradeStateSummary } from '../../shared/types.js';
 import { mapMonitorEvent, withViewerDb } from '../db.js';
+import { loadConfig } from '../../../config/config.js';
+import { getStorageDir } from '../../../config/paths.js';
 
 export const monitorRoute = new Hono();
 
@@ -28,6 +32,10 @@ monitorRoute.get('/status', async (c) => {
       ORDER BY timestamp DESC
       LIMIT 20
     `);
+
+    // Derived index summary — fallback to zeros if table doesn't exist
+    const derivedIndex = loadDerivedIndexSummary(db);
+
     const total = numberField(memory?.total);
     return {
       activityRatePerHour: numberField(activity?.count),
@@ -39,11 +47,47 @@ monitorRoute.get('/status', async (c) => {
         staleCount: numberField(memory?.stale),
       },
       recentEvents: events.map(mapMonitorEvent),
+      derivedIndex,
+      upgrade: loadUpgradeStatus(),
       generatedAt: new Date().toISOString(),
     };
   });
   return c.json(status);
 });
+
+function loadDerivedIndexSummary(db: { all: (sql: string, params?: unknown[]) => Record<string, unknown>[] }): DerivedIndexSummary {
+  try {
+    const rows = db.all(
+      "SELECT status, COUNT(*) AS count FROM derived_index_states GROUP BY status",
+    );
+    let indexed = 0, failed = 0, stale = 0;
+    for (const row of rows) {
+      const s = typeof row.status === 'string' ? row.status : '';
+      const c = typeof row.count === 'number' ? row.count : 0;
+      if (s === 'indexed') indexed = c;
+      else if (s === 'failed') failed = c;
+      else if (s === 'stale') stale = c;
+    }
+    const total = indexed + failed + stale;
+    return { total, indexed, failed, stale };
+  } catch {
+    return { total: 0, indexed: 0, failed: 0, stale: 0 };
+  }
+}
+
+function loadUpgradeStatus(): UpgradeStateSummary {
+  try {
+    const config = loadConfig();
+    const statePath = join(getStorageDir(config.storageLocation), 'upgrade.state.json');
+    if (!existsSync(statePath)) return { state: null, updatedAt: '' };
+    const raw = JSON.parse(readFileSync(statePath, 'utf-8'));
+    const state = typeof raw.state === 'string' ? raw.state : null;
+    const updatedAt = typeof raw.updatedAt === 'string' ? raw.updatedAt : '';
+    return { state, error: raw.error, updatedAt };
+  } catch {
+    return { state: null, updatedAt: '' };
+  }
+}
 
 function numberField(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;

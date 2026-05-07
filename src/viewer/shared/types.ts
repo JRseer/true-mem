@@ -8,8 +8,9 @@ export type ViewerMemoryClassification =
   | 'procedural'
   | 'decision'
   | 'semantic'
-  | 'episodic';
-export type ViewerMemoryStatus = 'active' | 'decayed' | 'deleted';
+  | 'episodic'
+  | 'pattern';
+export type ViewerMemoryStatus = 'active' | 'decayed' | 'deleted' | 'established' | 'noise';
 
 export interface ViewerMemory {
   id: string;
@@ -116,6 +117,8 @@ export interface MonitorStatus {
     staleCount: number;
   };
   recentEvents: MonitorEvent[];
+  derivedIndex: DerivedIndexSummary;
+  upgrade: UpgradeStateSummary;
   generatedAt: string;
 }
 
@@ -128,4 +131,52 @@ export interface SettingsResponse {
 
 export interface ApiErrorResponse {
   error: string;
+}
+
+// --- Health ---
+
+export interface HealthResponse {
+  ok: boolean;
+  databasePath: string;
+  databaseExists: boolean;
+  pluginVersion: string;
+  schemaVersion: number | null;
+  storageLocation: string;
+  generatedAt: string;
+}
+
+// --- Embeddings ---
+
+export interface EmbeddingStatus {
+  enabled: boolean;
+  ready: boolean;
+  failureCount: number;
+  circuitBreakerActive: boolean;
+  generatedAt: string;
+}
+
+// --- Derived Index ---
+
+export interface DerivedIndexSummary {
+  total: number;
+  indexed: number;
+  failed: number;
+  stale: number;
+}
+
+// --- Upgrade State ---
+
+export type UpgradeStateValue =
+  | 'ready'
+  | 'backing_up'
+  | 'migrating'
+  | 'rebuilding'
+  | 'verifying'
+  | 'completed'
+  | 'failed';
+
+export interface UpgradeStateSummary {
+  state: UpgradeStateValue | null;
+  error?: string;
+  updatedAt: string;
 }

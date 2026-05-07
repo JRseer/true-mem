@@ -19,13 +19,21 @@ import type {
   PsychMemConfig,
 } from '../types.js';
 import type { StorageLocation } from '../types.js';
+import type { EventCreateOptions, MemoryCreateFeatures, StorageProvider } from './port.js';
+import type { DerivedIndexIdentity, DerivedIndexState } from './index-status.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { createDatabase, type SqliteDatabase } from './sqlite-adapter.js';
+import {
+  DERIVED_INDEX_STATES_SCHEMA_SQL,
+  derivedIndexIdentityParams,
+  derivedIndexStateParams,
+  parseDerivedIndexStateRow,
+} from './index-state-store.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
 import { getStorageDir, getDatabasePath } from '../config/paths.js';
-import { getStorageLocation } from '../config/storage-location.js';
+import { loadConfig } from '../config.js';
 
 /**
  * Ensure parent directory exists for database file
@@ -116,7 +124,7 @@ function migrateDataIfNeeded(configuredLocation: StorageLocation): void {
  * Uses config storageLocation if available, otherwise falls back to legacy.
  */
 function getDatabasePathFromConfig(): string {
-  const storageLocation = getStorageLocation();
+  const storageLocation = loadConfig().storageLocation;
   
   // Auto-migrate data if needed (before ensuring directory)
   migrateDataIfNeeded(storageLocation);
@@ -130,7 +138,7 @@ function getDatabasePathFromConfig(): string {
   return join(storageDir, 'memory.db');
 }
 
-export class MemoryDatabase {
+export class MemoryDatabase implements StorageProvider {
   private db!: SqliteDatabase;
   private config: PsychMemConfig;
   private initialized: boolean = false;
@@ -279,6 +287,9 @@ export class MemoryDatabase {
           CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
           CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
           CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memory_units(content_hash);
+
+          -- Derived index state table (SQLite fact source remains authoritative)
+          ${DERIVED_INDEX_STATES_SCHEMA_SQL}
         `);
 
         // Record schema version
@@ -371,6 +382,32 @@ export class MemoryDatabase {
         throw error;
       }
     }
+
+    // Migration to version 4: Add derived index state table for rebuildable vector infrastructure
+    if (currentVersion < 4) {
+      log('Applying migration v4: Adding derived index state table...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        this.db.exec(DERIVED_INDEX_STATES_SCHEMA_SQL);
+
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          4,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v4 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v4 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v4', rollbackError);
+        }
+        throw error;
+      }
+    }
   }
 
   // Session Operations
@@ -433,7 +470,7 @@ export class MemoryDatabase {
     sessionId: string,
     hookType: HookType,
     content: string,
-    options?: { toolName?: string; toolInput?: string; toolOutput?: string; metadata?: Record<string, unknown> }
+    options?: EventCreateOptions
   ): Event {
     this.ensureInit();
 
@@ -479,16 +516,7 @@ export class MemoryDatabase {
     classification: MemoryClassification,
     summary: string,
     sourceEventIds: string[],
-    features: Partial<{
-      sessionId: string;
-      projectScope: string | null | undefined;
-      importance: number;
-      utility: number;
-      novelty: number;
-      confidence: number;
-      tags: string[];
-      embedding: Float32Array;
-    }> = {}
+    features: Partial<MemoryCreateFeatures> = {}
   ): Promise<MemoryUnit> {
     this.ensureInit();
 
@@ -662,11 +690,32 @@ export class MemoryDatabase {
     return this.rowToMemoryUnit(row);
   }
 
-  getMemoriesByScope(currentProject?: string, limit: number = 20, store?: MemoryStore): MemoryUnit[] {
+  getMemoriesByScope(currentProject?: string, limit: number = 20, store?: MemoryStore, sessionId?: string): MemoryUnit[] {
     this.ensureInit();
 
     const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
     const userClassPlaceholders = userLevelClassifications.map(() => '?').join(', ');
+
+    // Session scope: filter by session_id exclusively (session IS the scope boundary)
+    if (sessionId) {
+      const params: any[] = [sessionId];
+      let query = `
+        SELECT * FROM memory_units
+        WHERE status = 'active'
+        AND session_id = ?
+      `;
+
+      if (store) {
+        query += ` AND store = ?`;
+        params.push(store);
+      }
+
+      query += ` ORDER BY strength DESC LIMIT ?`;
+      params.push(limit);
+
+      const rows = this.db.prepare(query).all(...params) as any[];
+      return rows.map(this.rowToMemoryUnit.bind(this));
+    }
 
     // Check if currentProject is valid (not empty, not just '/')
     const hasValidProject = currentProject && currentProject !== '/' && currentProject.length > 1;
@@ -718,7 +767,7 @@ export class MemoryDatabase {
    * @param currentProject - Current project scope
    * @param limit - Maximum number of results
    */
-  async vectorSearch(queryTextOrEmbedding: Float32Array | string, currentProject?: string, limit: number = 10): Promise<MemoryUnit[]> {
+  async vectorSearch(queryTextOrEmbedding: Float32Array | string, currentProject?: string, limit: number = 10, sessionId?: string): Promise<MemoryUnit[]> {
     this.ensureInit();
 
     // Handle both string query and Float32Array (for backward compatibility)
@@ -729,10 +778,31 @@ export class MemoryDatabase {
     // Fallback: return top memories by strength when query is empty
     if (queryText.trim().length === 0) {
       log('vectorSearch: Empty query, falling back to strength-sorted memories');
-      const allMemories = this.getMemoriesByScope(currentProject, limit * 2);
+      const allMemories = this.getMemoriesByScope(currentProject, limit * 2, undefined, sessionId);
       return allMemories
         .sort((a, b) => b.strength - a.strength)
         .slice(0, limit);
+    }
+
+    // Session scope: filter by session_id exclusively
+    if (sessionId) {
+      const rows = this.db.prepare(`
+        SELECT * FROM memory_units
+        WHERE status = 'active'
+        AND session_id = ?
+        LIMIT 1000
+      `).all(sessionId) as any[];
+
+      const memories = rows.map(this.rowToMemoryUnit.bind(this));
+      const pairs = memories.map(memory => ({ text1: queryText, text2: memory.summary }));
+      const similarities = await getSimilarityBatch(pairs);
+
+      const results = memories
+        .map((memory, i) => ({ memory, similarity: similarities[i] ?? 0 }))
+        .sort((a, b) => b.similarity - a.similarity);
+
+      log(`vectorSearch(session): ${results.length} memories, top similarity: ${results[0]?.similarity.toFixed(3) ?? 'N/A'}`);
+      return results.slice(0, limit).map((r) => r.memory);
     }
 
     // Fetch all active memories for the current scope (same logic as getMemoriesByScope)
@@ -809,6 +879,51 @@ export class MemoryDatabase {
   promoteToLtm(memoryId: string): void {
     this.ensureInit();
     this.db.prepare(`UPDATE memory_units SET store = 'ltm', decay_rate = ?, updated_at = ? WHERE id = ?`).run(this.config.ltmDecayRate, new Date().toISOString(), memoryId);
+  }
+
+  // Derived Index State Operations
+  upsertDerivedIndexState(state: DerivedIndexState): void {
+    this.ensureInit();
+    this.db.prepare(`
+      INSERT INTO derived_index_states (
+        memory_id, memory_version, index_kind, provider_id, model, dimension,
+        status, updated_at, retry_count, error, degraded_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(memory_id, index_kind, provider_id, model, dimension) DO UPDATE SET
+        memory_version = excluded.memory_version,
+        status = excluded.status,
+        updated_at = excluded.updated_at,
+        retry_count = excluded.retry_count,
+        error = excluded.error,
+        degraded_reason = excluded.degraded_reason
+    `).run(...derivedIndexStateParams(state));
+  }
+
+  getDerivedIndexState(identity: DerivedIndexIdentity): DerivedIndexState | null {
+    this.ensureInit();
+    const row = this.db.prepare(`
+      SELECT * FROM derived_index_states
+      WHERE memory_id = ?
+      AND index_kind = ?
+      AND provider_id = ?
+      AND model = ?
+      AND dimension = ?
+      LIMIT 1
+    `).get(...derivedIndexIdentityParams(identity));
+
+    return row ? parseDerivedIndexStateRow(row) : null;
+  }
+
+  getRebuildableDerivedIndexStates(limit: number = 100): DerivedIndexState[] {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT * FROM derived_index_states
+      WHERE status IN ('not_indexed', 'failed', 'degraded', 'stale')
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `).all(limit);
+
+    return rows.map(parseDerivedIndexStateRow);
   }
 
   // Scoring

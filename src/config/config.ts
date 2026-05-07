@@ -4,7 +4,7 @@
  * Loads and manages user configuration from config.json with env var override.
  * 
  * Priority (highest to lowest):
- * 1. Environment variables (TRUE_MEM_STORAGE_LOCATION, TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS)
+ * 1. Environment variables (TRUE_MEM_STORAGE_LOCATION, TRUE_MEM_INJECTION_MODE, TRUE_MEM_SUBAGENT_MODE, TRUE_MEM_MAX_MEMORIES, TRUE_MEM_EMBEDDINGS, TRUE_MEM_INGEST_SHADOW, TRUE_MEM_INGEST_WRITE, TRUE_MEM_RETRIEVE_PIPELINE)
  * 2. config.json file
  * 3. Default values
  * 
@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { log } from '../logger.js';
-import type { TrueMemUserConfig, InjectionMode, SubAgentMode, StorageLocation } from '../types/config.js';
+import type { TrueMemUserConfig, InjectionMode, SubAgentMode, ShadowIngestMode, IngestWriteMode, RetrievePipelineMode, StorageLocation } from '../types/config.js';
 import { DEFAULT_USER_CONFIG } from '../types/config.js';
 import { parseJsonc } from '../utils/jsonc.js';
 import { getStorageDir } from './paths.js';
@@ -85,6 +85,36 @@ function validateEmbeddingsEnabled(value: unknown): number {
 }
 
 /**
+ * Validate shadow ingest from file config.
+ * Returns 0 or 1, or default if invalid.
+ */
+function validateShadowIngestEnabled(value: unknown): ShadowIngestMode {
+  if (value === 0 || value === 1) return value;
+  log(`Config: Invalid shadowIngestEnabled in file: ${value}, using default`);
+  return DEFAULT_USER_CONFIG.shadowIngestEnabled;
+}
+
+/**
+ * Validate main ingest write cutover from file config.
+ * Returns 0 or 1, or default if invalid.
+ */
+function validateIngestWriteEnabled(value: unknown): IngestWriteMode {
+  if (value === 0 || value === 1) return value;
+  log(`Config: Invalid ingestWriteEnabled in file: ${value}, using default`);
+  return DEFAULT_USER_CONFIG.ingestWriteEnabled;
+}
+
+/**
+ * Validate retrieve pipeline routing from file config.
+ * Returns 0 or 1, or default if invalid.
+ */
+function validateRetrievePipelineEnabled(value: unknown): RetrievePipelineMode {
+  if (value === 0 || value === 1) return value;
+  log(`Config: Invalid retrievePipelineEnabled in file: ${value}, using default`);
+  return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+}
+
+/**
  * Parse embeddings enabled from env or return default
  * Returns 0 or 1 (number for JSONC config compatibility)
  */
@@ -98,6 +128,96 @@ function parseEmbeddingsEnabled(envValue: string | undefined): number {
   }
   
   return parseInt(envValue, 10);
+}
+
+/**
+ * Parse shadow ingest from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseShadowIngestEnabled(envValue: string | undefined): ShadowIngestMode {
+  if (!envValue) return DEFAULT_USER_CONFIG.shadowIngestEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_INGEST_SHADOW: ${envValue}, using default (${DEFAULT_USER_CONFIG.shadowIngestEnabled})`);
+    return DEFAULT_USER_CONFIG.shadowIngestEnabled;
+  }
+
+  return parseInt(envValue, 10) as ShadowIngestMode;
+}
+
+/**
+ * Parse main ingest write cutover from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseIngestWriteEnabled(envValue: string | undefined): IngestWriteMode {
+  if (!envValue) return DEFAULT_USER_CONFIG.ingestWriteEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_INGEST_WRITE: ${envValue}, using default (${DEFAULT_USER_CONFIG.ingestWriteEnabled})`);
+    return DEFAULT_USER_CONFIG.ingestWriteEnabled;
+  }
+
+  return parseInt(envValue, 10) as IngestWriteMode;
+}
+
+/**
+ * Parse retrieve pipeline routing from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseRetrievePipelineEnabled(envValue: string | undefined): RetrievePipelineMode {
+  if (!envValue) return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_RETRIEVE_PIPELINE: ${envValue}, using default (${DEFAULT_USER_CONFIG.retrievePipelineEnabled})`);
+    return DEFAULT_USER_CONFIG.retrievePipelineEnabled;
+  }
+
+  return parseInt(envValue, 10) as RetrievePipelineMode;
+}
+
+/**
+ * Parse proactive enabled from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseProactiveEnabled(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.proactiveEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_PROACTIVE: ${envValue}, using default (${DEFAULT_USER_CONFIG.proactiveEnabled})`);
+    return DEFAULT_USER_CONFIG.proactiveEnabled;
+  }
+
+  return parseInt(envValue, 10);
+}
+
+/**
+ * Parse pattern detect interval from env or return default.
+ */
+function parseProactiveInterval(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.patternDetectIntervalMinutes;
+
+  const parsed = parseInt(envValue, 10);
+  if (isNaN(parsed) || parsed < 1) {
+    log(`Config: Invalid TRUE_MEM_PATTERN_DETECT_INTERVAL: ${envValue}, using default`);
+    return DEFAULT_USER_CONFIG.patternDetectIntervalMinutes;
+  }
+
+  return parsed;
+}
+
+/**
+ * Parse max suggestions from env or return default.
+ */
+function parseProactiveMaxSuggestions(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt;
+
+  const parsed = parseInt(envValue, 10);
+  if (isNaN(parsed) || parsed < 0) {
+    log(`Config: Invalid TRUE_MEM_MAX_SUGGESTIONS: ${envValue}, using default`);
+    return DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt;
+  }
+
+  return parsed;
 }
 
 /**
@@ -175,6 +295,12 @@ export function loadConfig(): TrueMemUserConfig {
   const envSubagentMode = process.env.TRUE_MEM_SUBAGENT_MODE;
   const envMaxMemories = process.env.TRUE_MEM_MAX_MEMORIES;
   const envEmbeddingsEnabled = process.env.TRUE_MEM_EMBEDDINGS;
+  const envShadowIngestEnabled = process.env.TRUE_MEM_INGEST_SHADOW;
+  const envIngestWriteEnabled = process.env.TRUE_MEM_INGEST_WRITE;
+  const envRetrievePipelineEnabled = process.env.TRUE_MEM_RETRIEVE_PIPELINE;
+  const envProactiveEnabled = process.env.TRUE_MEM_PROACTIVE;
+  const envPatternDetectInterval = process.env.TRUE_MEM_PATTERN_DETECT_INTERVAL;
+  const envMaxSuggestions = process.env.TRUE_MEM_MAX_SUGGESTIONS;
   // envStorageLocation already parsed above
 
   const config: TrueMemUserConfig = {
@@ -193,10 +319,28 @@ export function loadConfig(): TrueMemUserConfig {
     embeddingsEnabled: envEmbeddingsEnabled !== undefined
       ? parseEmbeddingsEnabled(envEmbeddingsEnabled)
       : validateEmbeddingsEnabled(fileConfig.embeddingsEnabled),
+    shadowIngestEnabled: envShadowIngestEnabled !== undefined
+      ? parseShadowIngestEnabled(envShadowIngestEnabled)
+      : validateShadowIngestEnabled(fileConfig.shadowIngestEnabled),
+    ingestWriteEnabled: envIngestWriteEnabled !== undefined
+      ? parseIngestWriteEnabled(envIngestWriteEnabled)
+      : validateIngestWriteEnabled(fileConfig.ingestWriteEnabled),
+    retrievePipelineEnabled: envRetrievePipelineEnabled !== undefined
+      ? parseRetrievePipelineEnabled(envRetrievePipelineEnabled)
+      : validateRetrievePipelineEnabled(fileConfig.retrievePipelineEnabled),
+    proactiveEnabled: envProactiveEnabled !== undefined
+      ? parseProactiveEnabled(envProactiveEnabled)
+      : (fileConfig.proactiveEnabled ?? DEFAULT_USER_CONFIG.proactiveEnabled),
+    patternDetectIntervalMinutes: envPatternDetectInterval !== undefined
+      ? parseProactiveInterval(envPatternDetectInterval)
+      : (fileConfig.patternDetectIntervalMinutes ?? DEFAULT_USER_CONFIG.patternDetectIntervalMinutes),
+    maxSuggestionsPerPrompt: envMaxSuggestions !== undefined
+      ? parseProactiveMaxSuggestions(envMaxSuggestions)
+      : (fileConfig.maxSuggestionsPerPrompt ?? DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt),
   };
   
   // Log the final config
-  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}`);
+  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}, shadowIngestEnabled=${config.shadowIngestEnabled}, ingestWriteEnabled=${config.ingestWriteEnabled}, retrievePipelineEnabled=${config.retrievePipelineEnabled}, proactiveEnabled=${config.proactiveEnabled}`);
   
   return config;
 }
@@ -218,8 +362,26 @@ export function generateConfigWithComments(config: TrueMemUserConfig): string {
   // Embeddings: 0 = Jaccard similarity only, 1 = hybrid (Jaccard + embeddings)
   "embeddingsEnabled": ${config.embeddingsEnabled},
   
+  // Ingest shadow-run: 0 = disabled (default), 1 = run new ingest pipeline beside legacy extraction without changing writes
+  "shadowIngestEnabled": ${config.shadowIngestEnabled},
+  
+  // Ingest write cutover: 0 = disabled (default), 1 = route real writes through the new ingest pipeline persist step
+  "ingestWriteEnabled": ${config.ingestWriteEnabled},
+  
+  // Retrieve pipeline: 0 = disabled (default), 1 = route scope-only reads through memory.retrieve pipeline with legacy fallback
+  "retrievePipelineEnabled": ${config.retrievePipelineEnabled},
+  
   // Maximum memories to inject per prompt (10-50 recommended)
-  "maxMemories": ${config.maxMemories}
+  "maxMemories": ${config.maxMemories},
+  
+  // v3.0: Proactive suggestion generation (0 = disabled, 1 = enabled)
+  "proactiveEnabled": ${config.proactiveEnabled},
+  
+  // v3.0: Interval in minutes between pattern detection runs
+  "patternDetectIntervalMinutes": ${config.patternDetectIntervalMinutes},
+  
+  // v3.0: Max proactive suggestions per prompt (0-10)
+  "maxSuggestionsPerPrompt": ${config.maxSuggestionsPerPrompt}
 }`;
 }
 
@@ -274,4 +436,25 @@ export function getMaxMemories(): number {
  */
 export function getEmbeddingsEnabledFromConfig(): number {
   return loadConfig().embeddingsEnabled;
+}
+
+/**
+ * Get ingest shadow-run enabled from config (convenience function).
+ */
+export function getShadowIngestEnabledFromConfig(): ShadowIngestMode {
+  return loadConfig().shadowIngestEnabled;
+}
+
+/**
+ * Get main ingest write cutover enabled from config (convenience function).
+ */
+export function getIngestWriteEnabledFromConfig(): IngestWriteMode {
+  return loadConfig().ingestWriteEnabled;
+}
+
+/**
+ * Get retrieve pipeline routing enabled from config (convenience function).
+ */
+export function getRetrievePipelineEnabledFromConfig(): RetrievePipelineMode {
+  return loadConfig().retrievePipelineEnabled;
 }

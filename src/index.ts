@@ -82,8 +82,8 @@ const TrueMemory: Plugin = async (ctx) => {
 
       try {
         // Lightweight operations only (database, config)
-        const { createTrueMemoryPlugin } = await import('./adapters/opencode/index.js');
-        state.realHooks = await createTrueMemoryPlugin(state.ctx);
+        const { createOpenCodeHooks } = await import('./acl/opencode.js');
+        state.realHooks = await createOpenCodeHooks(state.ctx);
         state.initialized = true;
 
         // Initialize NLP embeddings if feature flag is enabled

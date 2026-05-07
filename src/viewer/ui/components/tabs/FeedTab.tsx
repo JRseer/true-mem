@@ -153,11 +153,11 @@ function projectOptions(projects: string[]): Array<[string, string]> {
 }
 
 function classificationValue(value: string): ViewerMemoryClassification | 'all' {
-  return value === 'constraint' || value === 'preference' || value === 'learning' || value === 'procedural' || value === 'decision' || value === 'semantic' || value === 'episodic' ? value : 'all';
+  return value === 'constraint' || value === 'preference' || value === 'learning' || value === 'procedural' || value === 'decision' || value === 'semantic' || value === 'episodic' || value === 'pattern' ? value : 'all';
 }
 
 function statusValue(value: string): ViewerMemoryStatus | 'all' {
-  return value === 'active' || value === 'decayed' || value === 'deleted' ? value : 'all';
+  return value === 'active' || value === 'decayed' || value === 'deleted' || value === 'established' || value === 'noise' ? value : 'all';
 }
 
 function parseOptionalStrength(value: string): number | undefined {

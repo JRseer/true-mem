@@ -28,9 +28,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Install & Build
+      - name: Install, Test & Build
         run: |
           bun install
+          bun run typecheck
+          bun run test:run
           bun run build
 
       - name: Publish to npm

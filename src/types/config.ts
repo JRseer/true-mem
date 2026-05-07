@@ -7,7 +7,7 @@
 /**
  * Config version - bump when adding new fields
  */
-export const CONFIG_VERSION = 1;
+export const CONFIG_VERSION = 2;
 
 /**
  * Injection mode types
@@ -18,6 +18,21 @@ export type InjectionMode = 0 | 1;
  * Sub-agent mode types  
  */
 export type SubAgentMode = 0 | 1;
+
+/**
+ * Shadow ingest mode types
+ */
+export type ShadowIngestMode = 0 | 1;
+
+/**
+ * Main ingest write cutover mode types
+ */
+export type IngestWriteMode = 0 | 1;
+
+/**
+ * Retrieve pipeline mode types
+ */
+export type RetrievePipelineMode = 0 | 1;
 
 /**
  * Storage location type
@@ -33,7 +48,16 @@ export interface TrueMemUserConfig {
   subagentMode: SubAgentMode;
   maxMemories: number;
   embeddingsEnabled: number;
+  shadowIngestEnabled: ShadowIngestMode;
+  ingestWriteEnabled: IngestWriteMode;
+  retrievePipelineEnabled: RetrievePipelineMode;
   storageLocation: StorageLocation;
+  /** v3.0: enable proactive suggestion generation */
+  proactiveEnabled: number;
+  /** v3.0: minutes between pattern detection runs */
+  patternDetectIntervalMinutes: number;
+  /** v3.0: max suggestions injected per prompt */
+  maxSuggestionsPerPrompt: number;
 }
 
 /**
@@ -44,7 +68,13 @@ export const DEFAULT_USER_CONFIG: TrueMemUserConfig = {
   subagentMode: 1,       // ENABLED
   maxMemories: 20,
   embeddingsEnabled: 0,
+  shadowIngestEnabled: 0,
+  ingestWriteEnabled: 0,
+  retrievePipelineEnabled: 0,
   storageLocation: 'legacy',
+  proactiveEnabled: 1,             // v3.0: enabled by default
+  patternDetectIntervalMinutes: 60, // v3.0: hourly pattern detection
+  maxSuggestionsPerPrompt: 3,       // v3.0: max 3 suggestions per injection
 };
 
 /**

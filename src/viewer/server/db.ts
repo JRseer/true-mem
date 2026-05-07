@@ -179,6 +179,7 @@ function memoryClassification(value: unknown): ViewerMemoryClassification {
     case 'decision':
     case 'semantic':
     case 'episodic':
+    case 'pattern':
       return value;
     default:
       return 'semantic';
@@ -190,6 +191,8 @@ function memoryStatus(value: unknown): ViewerMemoryStatus {
     case 'active':
     case 'decayed':
     case 'deleted':
+    case 'established':
+    case 'noise':
       return value;
     default:
       return 'active';

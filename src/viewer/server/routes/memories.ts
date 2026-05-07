@@ -10,8 +10,9 @@ const CLASSIFICATIONS = new Set<ViewerMemoryClassification>([
   'decision',
   'semantic',
   'episodic',
+  'pattern',
 ]);
-const STATUSES = new Set<ViewerMemoryStatus>(['active', 'decayed', 'deleted']);
+const STATUSES = new Set<ViewerMemoryStatus>(['active', 'decayed', 'deleted', 'established', 'noise']);
 
 export const memoriesRoute = new Hono();
 
