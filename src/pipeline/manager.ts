@@ -4,9 +4,11 @@ import type {
   PipelineDefinition,
   PipelineManagerOptions,
   PipelineRunTrace,
+  PipelineSchedule,
   PipelineStepTrace,
   WorkflowStep,
 } from './types.js';
+import { ScheduleManager } from './scheduler.js';
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {
@@ -24,11 +26,14 @@ export class PipelineManager {
   private readonly createRunId: () => string;
   private readonly now: () => Date;
   private readonly hooks: PipelineManagerOptions['hooks'];
+  private readonly scheduler: ScheduleManager;
+  private readonly scheduledDefinitions = new Map<string, PipelineDefinition>();
 
   constructor(options: PipelineManagerOptions = {}) {
     this.createRunId = options.createRunId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
     this.hooks = options.hooks;
+    this.scheduler = options.scheduler ?? new ScheduleManager({ now: this.now });
   }
 
   createContext(metadata: Record<string, unknown> = {}): PipelineContext {
@@ -126,5 +131,32 @@ export class PipelineManager {
 
       contractState.set(key, context.metadata[key]);
     }
+  }
+
+  // ── Schedule support ─────────────────────────────────────────
+
+  registerSchedule(
+    schedule: PipelineSchedule,
+    definition: PipelineDefinition
+  ): void {
+    this.scheduledDefinitions.set(schedule.id, definition);
+    this.scheduler.register(schedule, async () => {
+      const def = this.scheduledDefinitions.get(schedule.id);
+      if (!def) return;
+      await this.run(def, this.createContext());
+    });
+  }
+
+  unregisterSchedule(id: string): void {
+    this.scheduledDefinitions.delete(id);
+    this.scheduler.unregister(id);
+  }
+
+  get scheduleCount(): number {
+    return this.scheduler.getAllSchedules().length;
+  }
+
+  getScheduleInfo(id: string): PipelineSchedule | undefined {
+    return this.scheduler.getSchedule(id);
   }
 }

@@ -20,10 +20,16 @@ import { setLastInjectedMemories, getLastInjectedMemories } from '../../state.js
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
 import { parseConversationLines } from '../../memory/role-patterns.js';
-import { getAtomicMemories, wrapMemories, selectMemoriesForInjection, type InjectionState } from './injection.js';
+import { getAtomicMemories, wrapMemories, selectMemoriesForInjection, wrapProactiveContext, type InjectionState } from './injection.js';
 import { getVersion } from '../../utils/version.js';
+import { loadConfig } from '../../config.js';
 import { EmbeddingService } from '../../memory/embeddings-nlp.js';
-import { PipelineManager, observeMemoryIngestPipeline } from '../../pipeline/index.js';
+import { PipelineManager, observeMemoryIngestPipeline, SuggestionQueue } from '../../pipeline/index.js';
+import {
+  detectFeedbackFromResponse,
+  applyFeedbackToQueue,
+  applyPatternUtilityUpdates,
+} from './suggestion-feedback.js';
 import { 
   markSessionCreated, 
   hasInjected, 
@@ -74,6 +80,7 @@ export interface TrueMemoryAdapterState {
   worktree: string;
   client: PluginInput['client'];
   pipelineManager: PipelineManager;
+  suggestionQueue: SuggestionQueue;
 }
 
 /**
@@ -149,6 +156,7 @@ export async function createTrueMemoryPlugin(
     worktree,
     client: ctx.client,
     pipelineManager: new PipelineManager(),
+    suggestionQueue: new SuggestionQueue(),
   };
 
   log(`True-Mem initialized — worktree=${worktree}, maxMemories=${config.maxMemories}`);
@@ -221,8 +229,6 @@ export async function createTrueMemoryPlugin(
         if (memories.length > 0) {
           const memoryList = formatMemoryListForResponse(memories);
 
-          // Find the first text part and replace it with a new part containing the memory list
-          // Using a new object prevents mutation persistence across prompts
           const firstTextPartIndex = output.parts.findIndex(part => part.type === 'text' && 'text' in part);
           if (firstTextPartIndex !== -1) {
             const originalPart = output.parts[firstTextPartIndex]!;
@@ -236,7 +242,6 @@ export async function createTrueMemoryPlugin(
 
           log(`Memory list request detected: injected ${memories.length} memories`);
         } else {
-          // Find the first text part and replace it with a new part containing the no-memories message
           const firstTextPartIndex = output.parts.findIndex(part => part.type === 'text' && 'text' in part);
           if (firstTextPartIndex !== -1) {
             const originalPart = output.parts[firstTextPartIndex]!;
@@ -247,6 +252,41 @@ export async function createTrueMemoryPlugin(
               };
             }
           }
+        }
+      }
+
+      // v3.0: Detect suggestion feedback in user response
+      if (state.suggestionQueue.all.filter(s => s.status === 'injected').length > 0) {
+        try {
+          const feedback = detectFeedbackFromResponse(
+            state.suggestionQueue.all,
+            userText
+          );
+          const patternDeltas = applyFeedbackToQueue(state.suggestionQueue, feedback);
+          if (patternDeltas.length > 0) {
+            // Apply pattern utility updates (strength as proxy)
+            for (const { patternId, delta } of patternDeltas) {
+              try {
+                const memory = state.db.getMemory(patternId);
+                if (memory) {
+                  const newStrength = Math.max(0, Math.min(1, memory.strength + delta));
+                  state.db.updateMemoryStrength(patternId, newStrength);
+
+                  // Auto-transition status based on strength
+                  if (newStrength > 0.7 && memory.status === 'active') {
+                    state.db.updateMemoryStatus(patternId, 'established');
+                  } else if (newStrength < 0.3 && memory.status !== 'noise') {
+                    state.db.updateMemoryStatus(patternId, 'noise');
+                  }
+                }
+              } catch {
+                // Pattern may have been deleted
+              }
+            }
+            log(`Feedback detected: ${feedback.actedOn.length} acted_on, ${feedback.ignored.length} ignored`);
+          }
+        } catch (err) {
+          log(`Feedback detection error (non-fatal): ${err}`);
         }
       }
     },
@@ -380,6 +420,20 @@ export async function createTrueMemoryPlugin(
           systemArray[systemArray.length - 1] = `${lastElement}\n\n${wrappedContext}`;
 
           output.system = systemArray;
+
+          // v3.0: Inject proactive suggestions after memories
+          const userConfig = loadConfig();
+          if (userConfig.proactiveEnabled !== 0) {
+            const proactiveXml = wrapProactiveContext(
+              state.suggestionQueue.getActive(),
+              userConfig.maxSuggestionsPerPrompt
+            );
+            if (proactiveXml) {
+              systemArray[systemArray.length - 1] = `${systemArray[systemArray.length - 1]}\n\n${proactiveXml}`;
+              output.system = systemArray;
+              log(`Proactive context injected: ${state.suggestionQueue.pendingCount} pending suggestions`);
+            }
+          }
 
           // Mark as injected after successful injection (mode 0 = session-start)
           if (injectionMode === 0 && sessionId) {

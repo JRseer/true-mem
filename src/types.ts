@@ -23,7 +23,8 @@ export type MemoryClassification =
   | 'learning'
   | 'preference'
   | 'decision'
-  | 'constraint';
+  | 'constraint'
+  | 'pattern';
 
 /**
  * Memory scope determines injection behavior
@@ -47,6 +48,7 @@ export const PROJECT_LEVEL_CLASSIFICATIONS: MemoryClassification[] = [
   'decision',
   'episodic',
   'semantic',
+  'pattern',
 ];
 
 export function isUserLevelClassification(classification: MemoryClassification): boolean {
@@ -65,7 +67,7 @@ export type MemoryStore = 'stm' | 'ltm';
 /**
  * Memory status for lifecycle management
  */
-export type MemoryStatus = 'active' | 'decayed' | 'pinned' | 'forgotten';
+export type MemoryStatus = 'active' | 'decayed' | 'pinned' | 'forgotten' | 'established' | 'noise';
 
 // =============================================================================
 // Injection Mode Types

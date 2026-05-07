@@ -77,6 +77,36 @@ export const copy = {
     activeSessions: '活跃会话',
     activeMemoryRatio: '活跃记忆占比',
     recentEvents: '近期事件流',
+    // New cards
+    systemInfo: '系统信息',
+    pluginVersion: '插件版本',
+    schemaVersion: '数据库 Schema',
+    storageLocation: '存储位置',
+    unknown: '未知',
+    embeddingWorker: '语义嵌入 Worker',
+    workerStatus: '状态',
+    workerRunning: '运行中',
+    workerNotEnabled: '未启用',
+    workerInitializing: '初始化中…',
+    workerDegraded: '降级运行',
+    workerReady: '已就绪',
+    workerNotReady: '未就绪',
+    workerFailures: '故障次数',
+    workerCircuitBreaker: '已熔断',
+    derivedIndex: '索引同步状态',
+    derivedTotal: '总计',
+    derivedIndexed: '已索引',
+    derivedFailed: '失败',
+    derivedStale: '过时',
+    upgradeState: '升级状态',
+    upgradeReady: '待升级',
+    upgradeBackingUp: '备份中',
+    upgradeMigrating: '迁移中',
+    upgradeRebuilding: '重建中',
+    upgradeVerifying: '验证中',
+    upgradeCompleted: '已完成',
+    upgradeFailed: '失败',
+    upgradeNone: '无运行中升级',
   },
   settings: {
     title: '设置',
@@ -120,6 +150,7 @@ export const classificationLabels: Record<ViewerMemoryClassification | 'all', st
   decision: '决策',
   semantic: '语义',
   episodic: '事件',
+  pattern: '模式',
 };
 
 export const statusLabels: Record<ViewerMemoryStatus | 'all', string> = {
@@ -127,6 +158,8 @@ export const statusLabels: Record<ViewerMemoryStatus | 'all', string> = {
   active: '活跃',
   decayed: '已衰减',
   deleted: '已删除',
+  established: '已确认',
+  noise: '噪声',
 };
 
 export const settingOptionLabels: Record<string, string> = {

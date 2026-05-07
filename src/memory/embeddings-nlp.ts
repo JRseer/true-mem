@@ -77,6 +77,19 @@ export class EmbeddingService {
     return EmbeddingService.instance;
   }
 
+  /**
+   * Public status for Viewer API — returns whether embeddings are enabled, ready,
+   * and if the circuit breaker has tripped.
+   */
+  getStatus(): { enabled: boolean; ready: boolean; failureCount: number; circuitBreakerActive: boolean } {
+    return {
+      enabled: this.enabled,
+      ready: this.ready,
+      failureCount: this.failureCount,
+      circuitBreakerActive: this.isCircuitBreakerOpen(),
+    };
+  }
+
   async initialize(): Promise<boolean> {
     // DEFENSIVE: Verify embeddings should be enabled
     // This prevents accidental initialization if called directly

@@ -176,6 +176,51 @@ function parseRetrievePipelineEnabled(envValue: string | undefined): RetrievePip
 }
 
 /**
+ * Parse proactive enabled from env or return default.
+ * Returns 0 or 1 (number for JSONC config compatibility)
+ */
+function parseProactiveEnabled(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.proactiveEnabled;
+
+  if (envValue !== '0' && envValue !== '1') {
+    log(`Config: Invalid TRUE_MEM_PROACTIVE: ${envValue}, using default (${DEFAULT_USER_CONFIG.proactiveEnabled})`);
+    return DEFAULT_USER_CONFIG.proactiveEnabled;
+  }
+
+  return parseInt(envValue, 10);
+}
+
+/**
+ * Parse pattern detect interval from env or return default.
+ */
+function parseProactiveInterval(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.patternDetectIntervalMinutes;
+
+  const parsed = parseInt(envValue, 10);
+  if (isNaN(parsed) || parsed < 1) {
+    log(`Config: Invalid TRUE_MEM_PATTERN_DETECT_INTERVAL: ${envValue}, using default`);
+    return DEFAULT_USER_CONFIG.patternDetectIntervalMinutes;
+  }
+
+  return parsed;
+}
+
+/**
+ * Parse max suggestions from env or return default.
+ */
+function parseProactiveMaxSuggestions(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt;
+
+  const parsed = parseInt(envValue, 10);
+  if (isNaN(parsed) || parsed < 0) {
+    log(`Config: Invalid TRUE_MEM_MAX_SUGGESTIONS: ${envValue}, using default`);
+    return DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt;
+  }
+
+  return parsed;
+}
+
+/**
  * Parse storage location from env or return default
  */
 function parseStorageLocation(envValue: string | undefined): StorageLocation {
@@ -253,6 +298,9 @@ export function loadConfig(): TrueMemUserConfig {
   const envShadowIngestEnabled = process.env.TRUE_MEM_INGEST_SHADOW;
   const envIngestWriteEnabled = process.env.TRUE_MEM_INGEST_WRITE;
   const envRetrievePipelineEnabled = process.env.TRUE_MEM_RETRIEVE_PIPELINE;
+  const envProactiveEnabled = process.env.TRUE_MEM_PROACTIVE;
+  const envPatternDetectInterval = process.env.TRUE_MEM_PATTERN_DETECT_INTERVAL;
+  const envMaxSuggestions = process.env.TRUE_MEM_MAX_SUGGESTIONS;
   // envStorageLocation already parsed above
 
   const config: TrueMemUserConfig = {
@@ -280,10 +328,19 @@ export function loadConfig(): TrueMemUserConfig {
     retrievePipelineEnabled: envRetrievePipelineEnabled !== undefined
       ? parseRetrievePipelineEnabled(envRetrievePipelineEnabled)
       : validateRetrievePipelineEnabled(fileConfig.retrievePipelineEnabled),
+    proactiveEnabled: envProactiveEnabled !== undefined
+      ? parseProactiveEnabled(envProactiveEnabled)
+      : (fileConfig.proactiveEnabled ?? DEFAULT_USER_CONFIG.proactiveEnabled),
+    patternDetectIntervalMinutes: envPatternDetectInterval !== undefined
+      ? parseProactiveInterval(envPatternDetectInterval)
+      : (fileConfig.patternDetectIntervalMinutes ?? DEFAULT_USER_CONFIG.patternDetectIntervalMinutes),
+    maxSuggestionsPerPrompt: envMaxSuggestions !== undefined
+      ? parseProactiveMaxSuggestions(envMaxSuggestions)
+      : (fileConfig.maxSuggestionsPerPrompt ?? DEFAULT_USER_CONFIG.maxSuggestionsPerPrompt),
   };
   
   // Log the final config
-  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}, shadowIngestEnabled=${config.shadowIngestEnabled}, ingestWriteEnabled=${config.ingestWriteEnabled}, retrievePipelineEnabled=${config.retrievePipelineEnabled}`);
+  log(`Config: storageLocation=${config.storageLocation}, injectionMode=${config.injectionMode}, subagentMode=${config.subagentMode}, maxMemories=${config.maxMemories}, embeddingsEnabled=${config.embeddingsEnabled}, shadowIngestEnabled=${config.shadowIngestEnabled}, ingestWriteEnabled=${config.ingestWriteEnabled}, retrievePipelineEnabled=${config.retrievePipelineEnabled}, proactiveEnabled=${config.proactiveEnabled}`);
   
   return config;
 }
@@ -315,7 +372,16 @@ export function generateConfigWithComments(config: TrueMemUserConfig): string {
   "retrievePipelineEnabled": ${config.retrievePipelineEnabled},
   
   // Maximum memories to inject per prompt (10-50 recommended)
-  "maxMemories": ${config.maxMemories}
+  "maxMemories": ${config.maxMemories},
+  
+  // v3.0: Proactive suggestion generation (0 = disabled, 1 = enabled)
+  "proactiveEnabled": ${config.proactiveEnabled},
+  
+  // v3.0: Interval in minutes between pattern detection runs
+  "patternDetectIntervalMinutes": ${config.patternDetectIntervalMinutes},
+  
+  // v3.0: Max proactive suggestions per prompt (0-10)
+  "maxSuggestionsPerPrompt": ${config.maxSuggestionsPerPrompt}
 }`;
 }
 

@@ -52,6 +52,12 @@ export interface TrueMemUserConfig {
   ingestWriteEnabled: IngestWriteMode;
   retrievePipelineEnabled: RetrievePipelineMode;
   storageLocation: StorageLocation;
+  /** v3.0: enable proactive suggestion generation */
+  proactiveEnabled: number;
+  /** v3.0: minutes between pattern detection runs */
+  patternDetectIntervalMinutes: number;
+  /** v3.0: max suggestions injected per prompt */
+  maxSuggestionsPerPrompt: number;
 }
 
 /**
@@ -66,6 +72,9 @@ export const DEFAULT_USER_CONFIG: TrueMemUserConfig = {
   ingestWriteEnabled: 0,
   retrievePipelineEnabled: 0,
   storageLocation: 'legacy',
+  proactiveEnabled: 1,             // v3.0: enabled by default
+  patternDetectIntervalMinutes: 60, // v3.0: hourly pattern detection
+  maxSuggestionsPerPrompt: 3,       // v3.0: max 3 suggestions per injection
 };
 
 /**

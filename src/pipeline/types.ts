@@ -66,4 +66,24 @@ export interface PipelineManagerOptions {
   readonly createRunId?: (() => string) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly hooks?: PipelineStepHooks | undefined;
+  readonly scheduler?: import('./scheduler.js').ScheduleManager | undefined;
 }
+
+// ── Schedule types ──────────────────────────────────────────────
+
+export interface PipelineSchedule {
+  readonly id: string;
+  readonly cron: string;
+  readonly pipelineName: string;
+  readonly pipelineVersion: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+}
+
+export interface ScheduleManagerOptions {
+  readonly now?: () => Date;
+}
+
+/** Callback invoked when a schedule fires */
+export type ScheduleHandler = (schedule: PipelineSchedule) => Promise<void>;

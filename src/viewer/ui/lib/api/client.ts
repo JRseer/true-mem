@@ -1,4 +1,6 @@
 import type {
+  EmbeddingStatus,
+  HealthResponse,
   MemoryFilters,
   MemoryPatchRequest,
   MonitorStatus,
@@ -25,6 +27,14 @@ export async function fetchStats(): Promise<StatsOverview> {
 
 export async function fetchMonitorStatus(): Promise<MonitorStatus> {
   return request('/api/monitor/status');
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return request('/api/health');
+}
+
+export async function fetchEmbeddingStatus(): Promise<EmbeddingStatus> {
+  return request('/api/embeddings/status');
 }
 
 export async function fetchSettings(): Promise<SettingsResponse> {

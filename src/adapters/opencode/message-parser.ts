@@ -1,3 +1,4 @@
+import { log } from '../../logger.js';
 import type { Message, Part } from '../../types.js';
 import type { MessageRole, RoleAwareLine } from '../../types.js';
 
@@ -81,7 +82,8 @@ export function extractConversationText(messages: MessageContainer[]): string {
   ];
 
   for (const msg of messages) {
-    const role = msg.info.role === 'user' ? 'Human' : 'Assistant';
+    const rawRole = (msg.info.role ?? '').toLowerCase();
+    const role = (rawRole === 'user' || rawRole === 'human') ? 'Human' : 'Assistant';
 
     for (const part of msg.parts) {
       if (part.type === 'text' && 'text' in part) {
@@ -151,8 +153,18 @@ export function extractConversationTextWithRoles(messages: MessageContainer[]): 
     /```json[\s\S]*?"tool"[\s\S]*?```/gi,  // Strip JSON blobs with tool
   ];
 
+  // Collect unique roles for debugging
+  const uniqueRoles = new Set<string>();
   for (const msg of messages) {
-    const role: MessageRole = msg.info.role === 'user' ? 'user' : 'assistant';
+    const rawRole = msg.info.role;
+    uniqueRoles.add(String(rawRole));
+  }
+  log(`Debug: Unique message roles in session: [${[...uniqueRoles].join(', ')}]`);
+
+  for (const msg of messages) {
+    // Case-insensitive role matching to handle runtime variants (user/human/User/etc.)
+    const rawRole = (msg.info.role ?? '').toLowerCase();
+    const role: MessageRole = (rawRole === 'user' || rawRole === 'human') ? 'user' : 'assistant';
     const roleLabel = role === 'user' ? 'Human' : 'Assistant';
 
     for (const part of msg.parts) {

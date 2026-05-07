@@ -59,5 +59,5 @@ function optionalNumberParam(name: string): number | undefined {
 
 function classificationParam(): MemoryFilters['classification'] {
   const value = new URLSearchParams(window.location.search).get('classification');
-  return value === 'constraint' || value === 'preference' || value === 'learning' || value === 'procedural' || value === 'decision' || value === 'semantic' || value === 'episodic' ? value : 'all';
+  return value === 'constraint' || value === 'preference' || value === 'learning' || value === 'procedural' || value === 'decision' || value === 'semantic' || value === 'episodic' || value === 'pattern' ? value : 'all';
 }

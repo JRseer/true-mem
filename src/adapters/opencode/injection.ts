@@ -6,6 +6,7 @@
 import type { MemoryUnit } from '../../types.js';
 import type { MemoryDatabase } from '../../storage/database.js';
 import type { StorageReadPort } from '../../storage/index.js';
+import type { Suggestion } from '../../pipeline/suggestion.js';
 import { jaccardSimilarity } from '../../memory/embeddings.js';
 import { USER_LEVEL_CLASSIFICATIONS } from '../../types.js';
 import { log } from '../../logger.js';
@@ -266,4 +267,38 @@ export async function selectMemoriesForInjection(
   }
   
   return memories;
+}
+
+/**
+ * Wrap proactive suggestions in XML format for injection after memory context.
+ *
+ * @param suggestions - Active suggestions from SuggestionQueue
+ * @param maxSuggestions - Max suggestions to include (default 3)
+ * @returns XML string or empty string if no suggestions
+ */
+export function wrapProactiveContext(
+  suggestions: readonly Suggestion[],
+  maxSuggestions: number = 3
+): string {
+  const active = suggestions
+    .filter(s => s.status === 'pending')
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, maxSuggestions);
+
+  if (active.length === 0) return '';
+
+  const lines: string[] = ['<proactive_context>'];
+  for (const s of active) {
+    lines.push(
+      `  <suggestion id="${s.id}" type="${s.type}" priority="${s.priority.toFixed(2)}" data-suggestion-id="${s.id}">`
+    );
+    lines.push(`    ${escapeXml(s.summary)}`);
+    if (s.detail.length > 0) {
+      lines.push(`    ${escapeXml(s.detail)}`);
+    }
+    lines.push('  </suggestion>');
+  }
+  lines.push('</proactive_context>');
+
+  return lines.join('\n');
 }

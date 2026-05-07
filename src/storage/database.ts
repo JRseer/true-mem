@@ -33,7 +33,7 @@ import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
 import { log } from '../logger.js';
 import { getStorageDir, getDatabasePath } from '../config/paths.js';
-import { getStorageLocation } from '../config/storage-location.js';
+import { loadConfig } from '../config.js';
 
 /**
  * Ensure parent directory exists for database file
@@ -124,7 +124,7 @@ function migrateDataIfNeeded(configuredLocation: StorageLocation): void {
  * Uses config storageLocation if available, otherwise falls back to legacy.
  */
 function getDatabasePathFromConfig(): string {
-  const storageLocation = getStorageLocation();
+  const storageLocation = loadConfig().storageLocation;
   
   // Auto-migrate data if needed (before ensuring directory)
   migrateDataIfNeeded(storageLocation);
