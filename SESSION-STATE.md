@@ -198,3 +198,11 @@
 - `NlpEmbeddingProvider`：包装现有 `embedding-worker.ts` 子进程，通过 IPC 发送文本嵌入请求，支持超时和 fallback 到 hash-based 向量。
 - 当 `@huggingface/transformers` 可用时自动使用 all-MiniLM-L6-v2 真实嵌入；不可用或超时时回退到 hashEmbed。
 - 保留 `LocalEmbeddingProvider` 作为零依赖的确定性选项。
+
+---
+
+## 配置变更：禁用 supermemory，使用本地 trueMem
+- **时间**：2026-05-11
+- **操作**：`opencode.json` 中 supermemory MCP 已禁用（`"enabled": false`），AGENTS.md 中所有 supermemory 引用已替换为 trueMem
+- **现状**：trueMem 插件已加载（`file:///D:/Program Files/trueMem`），`memory.db` 23MB 数据就绪，`config.jsonc` 已配置（injectionMode=0, subagentMode=1, embeddingsEnabled=1, maxMemories=25）
+- **效果**：记忆通过 `<true_memory_context>` 自动注入，无需手动调用 MCP 工具

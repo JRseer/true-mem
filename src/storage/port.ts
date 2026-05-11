@@ -76,6 +76,32 @@ export interface StorageDerivedIndexPort {
   getRebuildableDerivedIndexStates(limit?: number): DerivedIndexState[];
 }
 
+export interface StorageInjectionTrackingPort {
+  recordMemoryInjection(
+    sessionId: string,
+    memoryId: string,
+    injectionContext?: string,
+    relevanceScore?: number
+  ): void;
+  recordMemoryInjectionBatch(
+    sessionId: string,
+    injections: Array<{ memoryId: string; injectionContext?: string; relevanceScore?: number }>
+  ): void;
+  getSessionInjections(sessionId: string): Array<{
+    id: string;
+    memoryId: string;
+    memorySummary: string;
+    classification: string;
+    injectedAt: string;
+    relevanceScore: number | null;
+  }>;
+  getMemoryUsageHistory(memoryId: string, limit?: number): Array<{
+    sessionId: string;
+    injectedAt: string;
+    project: string;
+  }>;
+}
+
 export interface StorageLifecyclePort {
   close(): void;
 }
@@ -91,6 +117,7 @@ export interface StorageProvider extends
   StorageWritePort,
   StorageMaintenancePort,
   StorageDerivedIndexPort,
+  StorageInjectionTrackingPort,
   StorageLifecyclePort {}
 
 export type StoragePort = StorageProvider;

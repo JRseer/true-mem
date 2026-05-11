@@ -9,6 +9,7 @@ import { monitorRoute } from './routes/monitor.js';
 import { settingsRoute } from './routes/settings.js';
 import { statsRoute } from './routes/stats.js';
 import { embeddingsRoute } from './routes/embeddings.js';
+import { sessionsRoute } from './routes/sessions.js';
 import { getVersion } from '../../utils/version.js';
 import { loadConfig } from '../../config/config.js';
 
@@ -65,6 +66,7 @@ app.route('/api/stats', statsRoute);
 app.route('/api/monitor', monitorRoute);
 app.route('/api/embeddings', embeddingsRoute);
 app.route('/api/settings', settingsRoute);
+app.route('/api/sessions', sessionsRoute);
 
 if (existsSync(staticRoot)) {
   app.use('/assets/*', serveStatic({ root: staticRoot }));

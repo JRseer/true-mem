@@ -5,6 +5,9 @@ import type {
   MemoryPatchRequest,
   MonitorStatus,
   PaginatedMemoriesResponse,
+  PaginatedSessionsResponse,
+  SessionDetail,
+  SessionInjectionsResponse,
   SettingsResponse,
   StatsOverview,
 } from '../../../shared/types.js';
@@ -51,6 +54,21 @@ export async function saveSettings(config: SettingsResponse['config']): Promise<
 
 export async function resetSettings(): Promise<SettingsResponse> {
   return request('/api/settings/reset', { method: 'POST', headers: viewerWriteHeaders() });
+}
+
+export async function fetchSessions(page: number = 1, pageSize: number = 20, project?: string, status?: string): Promise<PaginatedSessionsResponse> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (project) params.set('project', project);
+  if (status) params.set('status', status);
+  return request(`/api/sessions?${params.toString()}`);
+}
+
+export async function fetchSessionDetail(sessionId: string): Promise<SessionDetail> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export async function fetchSessionInjections(sessionId: string): Promise<SessionInjectionsResponse> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/injections`);
 }
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {

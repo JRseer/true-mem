@@ -408,6 +408,48 @@ export class MemoryDatabase implements StorageProvider {
         throw error;
       }
     }
+
+    // Migration to version 5: Add memory_injections table for tracking memory usage in sessions
+    if (currentVersion < 5) {
+      log('Applying migration v5: Adding memory_injections table...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS memory_injections (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            memory_id TEXT NOT NULL,
+            injected_at TEXT NOT NULL,
+            injection_context TEXT,
+            relevance_score REAL,
+            was_used INTEGER DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            FOREIGN KEY (memory_id) REFERENCES memory_units(id)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_injections_session ON memory_injections(session_id);
+          CREATE INDEX IF NOT EXISTS idx_injections_memory ON memory_injections(memory_id);
+          CREATE INDEX IF NOT EXISTS idx_injections_time ON memory_injections(injected_at);
+        `);
+
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          5,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v5 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v5 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v5', rollbackError);
+        }
+        throw error;
+      }
+    }
   }
 
   // Session Operations
@@ -1007,6 +1049,114 @@ export class MemoryDatabase implements StorageProvider {
     }
 
     return promotedCount;
+  }
+
+  // Memory Injection Tracking
+  recordMemoryInjection(
+    sessionId: string,
+    memoryId: string,
+    injectionContext?: string,
+    relevanceScore?: number
+  ): void {
+    this.ensureInit();
+    const id = uuidv4();
+    const injectedAt = new Date().toISOString();
+
+    this.db.prepare(`
+      INSERT INTO memory_injections (id, session_id, memory_id, injected_at, injection_context, relevance_score, was_used)
+      VALUES (?, ?, ?, ?, ?, ?, 0)
+    `).run(id, sessionId, memoryId, injectedAt, injectionContext ?? null, relevanceScore ?? null);
+  }
+
+  recordMemoryInjectionBatch(
+    sessionId: string,
+    injections: Array<{ memoryId: string; injectionContext?: string; relevanceScore?: number }>
+  ): void {
+    this.ensureInit();
+    const injectedAt = new Date().toISOString();
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO memory_injections (id, session_id, memory_id, injected_at, injection_context, relevance_score, was_used)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+      `);
+
+      for (const injection of injections) {
+        const id = uuidv4();
+        stmt.run(
+          id,
+          sessionId,
+          injection.memoryId,
+          injectedAt,
+          injection.injectionContext ?? null,
+          injection.relevanceScore ?? null
+        );
+      }
+
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  getSessionInjections(sessionId: string): Array<{
+    id: string;
+    memoryId: string;
+    memorySummary: string;
+    classification: string;
+    injectedAt: string;
+    relevanceScore: number | null;
+  }> {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT 
+        mi.id,
+        mi.memory_id as memoryId,
+        mu.summary as memorySummary,
+        mu.classification,
+        mi.injected_at as injectedAt,
+        mi.relevance_score as relevanceScore
+      FROM memory_injections mi
+      JOIN memory_units mu ON mi.memory_id = mu.id
+      WHERE mi.session_id = ?
+      ORDER BY mi.injected_at DESC
+    `).all(sessionId) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      memoryId: row.memoryId,
+      memorySummary: row.memorySummary,
+      classification: row.classification,
+      injectedAt: row.injectedAt,
+      relevanceScore: row.relevanceScore,
+    }));
+  }
+
+  getMemoryUsageHistory(memoryId: string, limit: number = 50): Array<{
+    sessionId: string;
+    injectedAt: string;
+    project: string;
+  }> {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT 
+        mi.session_id as sessionId,
+        mi.injected_at as injectedAt,
+        s.project
+      FROM memory_injections mi
+      JOIN sessions s ON mi.session_id = s.id
+      WHERE mi.memory_id = ?
+      ORDER BY mi.injected_at DESC
+      LIMIT ?
+    `).all(memoryId, limit) as any[];
+
+    return rows.map(row => ({
+      sessionId: row.sessionId,
+      injectedAt: row.injectedAt,
+      project: row.project,
+    }));
   }
 
   // Helpers

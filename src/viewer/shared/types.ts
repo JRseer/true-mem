@@ -180,3 +180,49 @@ export interface UpgradeStateSummary {
   error?: string;
   updatedAt: string;
 }
+
+// --- Sessions ---
+
+export interface ViewerSession {
+  id: string;
+  project: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: string;
+  memoryCount: number;
+  injectionCount: number;
+}
+
+export interface PaginatedSessionsResponse {
+  items: ViewerSession[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface SessionDetail {
+  id: string;
+  project: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface SessionInjection {
+  id: string;
+  memoryId: string;
+  memorySummary: string;
+  classification: ViewerMemoryClassification;
+  store: ViewerMemoryStore;
+  injectedAt: string;
+  relevanceScore: number | null;
+  injectionContext: string | null;
+}
+
+export interface SessionInjectionsResponse {
+  sessionId: string;
+  injections: SessionInjection[];
+  total: number;
+}
