@@ -6,6 +6,7 @@
 - 当前判断：v2 架构已有 scope、pipeline/storage/upgrade/llm 的部分骨架，但核心实现仍未完成；本轮目标是推进一个可编译、可测试、兼容旧行为的升级切片。
 
 ## 当前约束
+- 角色 C 前置门禁：触发“改造、迭代、业务变更、业务逻辑更改”等角色 C 任务时，必须先询问用户是否输出详细设计文档（SDD），由用户判断是否立即编码；未得到用户选择前不直接进入编码实现。
 - 保留 trueMem 认知模型不变量；Pipeline/Storage/LLM 不得覆盖 memory decision。
 - SQLite 仍是事实源；LanceDB/向量索引只能作为派生索引。
 - 默认保持本地优先，不引入远程 provider 数据外发。
@@ -193,6 +194,17 @@
 - 脚本：`scripts/upgrade-verify.ts`，在用户真实 `~/.true-mem/memory.db` 上执行 backup→migrate→rebuild→verify 全链路。
 - 结果：`final state: completed`，2 条活跃记忆成功重建 LanceDB 派生索引，备份文件 `memory.db.v1.bak` 已生成。
 - V2 升级**全部核心可用**：Pipeline 四管道、Domain Port、Session Scope、LanceDB、LLM Provider、Upgrade 链路全部通过验证。
+
+## 配置变更：禁用 supermemory，使用本地 trueMem
+- **时间**：2026-05-11
+- **操作**：`opencode.json` 中 supermemory MCP 已禁用（`"enabled": false`），AGENTS.md 中所有 supermemory 引用已替换为 trueMem
+- **现状**：trueMem 插件已加载（`file:///D:/Program Files/trueMem`），`memory.db` 23MB 数据就绪，`config.jsonc` 已配置（injectionMode=0, subagentMode=1, embeddingsEnabled=1, maxMemories=25）
+- **效果**：记忆通过 `<true_memory_context>` 自动注入，无需手动调用 MCP 工具
+
+## 用户声明约束（已存储）
+- **分类**：constraint（Global）
+- **内容**：触发角色C（改造/迭代/业务变更/业务逻辑更改）时，必须先询问用户是否输出详细设计文档(SDD)，由用户判断是否立即编码
+- **存储验证**：直接写入 trueMem SQLite 成功，strength=0.85
 
 ## 最新完成切片：NLP Embedding Provider 集成
 - `NlpEmbeddingProvider`：包装现有 `embedding-worker.ts` 子进程，通过 IPC 发送文本嵌入请求，支持超时和 fallback 到 hash-based 向量。

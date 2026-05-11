@@ -300,6 +300,11 @@ export class MemoryDatabase implements StorageProvider {
 
         this.db.exec('COMMIT');
         log('Schema initialized successfully');
+
+        // A fresh database starts from the consolidated v1 schema, then must
+        // immediately receive incremental migrations so tables added after v1
+        // (for example memory_injections) exist before first runtime use.
+        this.applyMigrations(1);
       } catch (error) {
         try {
           this.db.exec('ROLLBACK');
@@ -1160,6 +1165,42 @@ export class MemoryDatabase implements StorageProvider {
   }
 
   // Helpers
+  private safeParseJsonObject(value: unknown, fallback: Record<string, unknown> | undefined, context: string): Record<string, unknown> | undefined {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return fallback;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      log(`Invalid JSON object for ${context}; using fallback`);
+      return fallback;
+    } catch (error) {
+      log(`Failed to parse JSON object for ${context}; using fallback: ${error}`);
+      return fallback;
+    }
+  }
+
+  private safeParseJsonStringArray(value: unknown, fallback: string[], context: string): string[] {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return fallback;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === 'string');
+      }
+      log(`Invalid JSON array for ${context}; using fallback`);
+      return fallback;
+    } catch (error) {
+      log(`Failed to parse JSON array for ${context}; using fallback: ${error}`);
+      return fallback;
+    }
+  }
+
   private rowToSession(row: any): Session {
     return {
       id: row.id,
@@ -1167,7 +1208,7 @@ export class MemoryDatabase implements StorageProvider {
       startedAt: new Date(row.started_at),
       endedAt: row.ended_at ? new Date(row.ended_at) : undefined,
       status: row.status,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: this.safeParseJsonObject(row.metadata, undefined, `session ${row.id}.metadata`),
       transcriptPath: row.transcript_path ?? undefined,
       transcriptWatermark: row.transcript_watermark ?? 0,
       messageWatermark: row.message_watermark ?? 0,
@@ -1184,7 +1225,7 @@ export class MemoryDatabase implements StorageProvider {
       toolName: row.tool_name ?? undefined,
       toolInput: row.tool_input ?? undefined,
       toolOutput: row.tool_output ?? undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: this.safeParseJsonObject(row.metadata, undefined, `event ${row.id}.metadata`),
     };
   }
 
@@ -1195,7 +1236,7 @@ export class MemoryDatabase implements StorageProvider {
       store: row.store as MemoryStore,
       classification: row.classification as MemoryClassification,
       summary: row.summary,
-      sourceEventIds: JSON.parse(row.source_event_ids),
+      sourceEventIds: this.safeParseJsonStringArray(row.source_event_ids, [], `memory ${row.id}.source_event_ids`),
       projectScope: row.project_scope ?? undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
@@ -1209,8 +1250,8 @@ export class MemoryDatabase implements StorageProvider {
       interference: row.interference,
       strength: row.strength,
       decayRate: row.decay_rate,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      associations: row.associations ? JSON.parse(row.associations) : [],
+      tags: this.safeParseJsonStringArray(row.tags, [], `memory ${row.id}.tags`),
+      associations: this.safeParseJsonStringArray(row.associations, [], `memory ${row.id}.associations`),
       status: row.status as MemoryStatus,
       version: row.version,
       evidence: [],
