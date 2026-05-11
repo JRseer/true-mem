@@ -1,4 +1,4 @@
-# True-Mem
+# True-Mem v1.4.1
 
 > A persistent memory plugin for OpenCode with cognitive psychology-based memory management.
 
@@ -13,8 +13,10 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Viewer](#viewer)
+- [Memory Injection Tracking](#memory-injection-tracking)
 - [Advanced: Semantic Embeddings (Experimental)](#advanced-semantic-embeddings-experimental)
 - [Architecture](#architecture)
+- [Pipeline Engine](#pipeline-engine)
 - [Memory Classifications](#memory-classifications)
 - [Technical Details](#technical-details)
 - [Contributing](#contributing)
@@ -75,8 +77,11 @@ What makes True-Mem different from a simple database? It's modeled after how hum
 | **Multilingual** | Full support for Italian, Spanish, French, German, and 11 more languages |
 | **Smart Decay** | Only episodic memories fade; preferences and decisions stay forever |
 | **Zero Native Dependencies** | Works on Bun and Node 22+ with built-in SQLite |
-| **Local Viewer** | Chinese web UI for browsing, filtering, monitoring, and configuring memories on localhost |
-| **Multilingual** | Full support for Italian, Spanish, French, German, and 11 more languages |
+| **Local Viewer** | Chinese web UI for browsing, filtering, monitoring, sessions, and configuring memories on localhost |
+| **Memory Injection Tracking** | Records every injected memory per session with timeline visualization |
+| **Dual Injection** | Memories injected into both main-agent prompts and sub-agent (task/background_task) prompts |
+| **Pipeline Engine** | Controlled cutover architecture: ingest, retrieve, decay, and maintenance pipelines with shadow-run comparison |
+| **Proactive Suggestions** | Automatically inserts relevant memories as suggestions when the user pattern matches |
 
 ---
 
@@ -126,7 +131,7 @@ A `~/.true-mem/` directory will be created to store the SQLite database and debu
 After restarting OpenCode, you'll see a toast notification confirming the plugin is loaded:
 
 ```
-True-Mem vX.X.X
+True-Mem v1.4.1
 Memory active.
 ```
 
@@ -143,8 +148,8 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
   // Storage location: "legacy" = ~/.true-mem/ (default), "opencode" = ~/.config/opencode/true-mem/
   "storageLocation": "legacy",
 
-  // Injection mode: 0 = session start only (recommended), 1 = every prompt
-  "injectionMode": 0,
+  // Injection mode: 0 = session start only, 1 = every prompt (default)
+  "injectionMode": 1,
 
   // Sub-agent mode: 0 = disabled, 1 = enabled (default)
   "subagentMode": 1,
@@ -153,7 +158,13 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
   "embeddingsEnabled": 0,
 
   // Maximum memories to inject per prompt (10-50 recommended)
-  "maxMemories": 20
+  "maxMemories": 20,
+
+  // Retrieve pipeline: 0 = legacy scope reads only, 1 = use pipeline with SQLite-first fallback (default: 0)
+  "retrievePipelineEnabled": 0,
+
+  // Proactive suggestions: 0 = disabled, 1 = enabled (default)
+  "proactiveEnabled": 1
 }
 ```
 
@@ -161,13 +172,13 @@ True-Mem creates a configuration file at `~/.true-mem/config.jsonc` on first run
 
 | Setting | Values | Description |
 |---------|--------|-------------|
-| Setting | Values | Description |
-|---------|--------|-------------|
 | **storageLocation** | `"legacy"` or `"opencode"` | Where to store data. `"legacy"` = `~/.true-mem/` (default). `"opencode"` = `~/.config/opencode/true-mem/` |
-| **injectionMode** | `0` or `1` | `0` = inject memories only at session start (saves tokens, default). `1` = inject on every prompt (legacy behavior) |
+| **injectionMode** | `0` or `1` | `0` = inject memories only at session start (saves tokens). `1` = inject on every prompt (default) |
 | **subagentMode** | `0` or `1` | `0` = disable memory injection for sub-agents. `1` = enable for sub-agents (default) |
 | **embeddingsEnabled** | `0` or `1` | `0` = use Jaccard similarity only (fast, default). `1` = use hybrid semantic embeddings (experimental) |
 | **maxMemories** | `10-50` | How many memories to include in each prompt (default: 20). Lower = fewer tokens, Higher = more context |
+| **retrievePipelineEnabled** | `0` or `1` | `0` = legacy scope reads. `1` = use pipeline-based retrieval with SQLite-first fallback (experimental) |
+| **proactiveEnabled** | `0` or `1` | `0` = disabled. `1` = auto-insert relevant memory suggestions when user patterns match |
 
 **Injection Mode Trade-off:**
 - **Mode 1 (ALWAYS)** - Default. Real-time memory updates, at each prompt. New memories appear immediately. Best for most users.
@@ -184,6 +195,7 @@ You can also configure via environment variables (override config file):
 | `TRUE_MEM_SUBAGENT_MODE` | `0` or `1` | Override subagentMode setting |
 | `TRUE_MEM_EMBEDDINGS` | `0` or `1` | Override embeddingsEnabled setting |
 | `TRUE_MEM_MAX_MEMORIES` | `10-50` | Override maxMemories setting |
+| `TRUE_MEM_RETRIEVE_PIPELINE` | `0` or `1` | Override retrievePipelineEnabled setting |
 
 Example:
 ```bash
@@ -195,7 +207,7 @@ opencode
 
 ### Changing Storage Location
 
-When you change `storageLocation` (via config or env var), True-Mem automatically migrates your data:
+When you change `storageLocation` (via config or env var), True-Mem v1.4.1 automatically migrates your data:
 
 1. **Automatic copy** - If the new location has no data, the existing database is copied from the old location
 2. **Non-destructive** - Original data is preserved as backup (you can revert by switching back)
@@ -222,14 +234,17 @@ bun run viewer
 
 Open `http://127.0.0.1:3456` in your browser. The Viewer is bound to loopback by default and reads the active SQLite database from the configured storage location.
 
-The Viewer provides four tabs:
+The Viewer provides five tabs:
 
 | Tab | Purpose |
 |-----|---------|
-| 记忆列表 | Search, filter, expand details, soft delete/restore, and reclassify memory entries |
+| 记忆列表 | Search, filter, expand details, soft delete/restore, and reclassify memory entries with virtual scrolling and smart refresh |
+| 会话记录 | Session list with memory injection timeline - shows which sessions received which memories, with pagination and injection detail view |
 | 数据统计 | Charts for store, classification, creation trend, status, project, and strength metrics |
 | 运行监控 | SQLite-inferred activity, errors, active sessions, memory health, and recent events |
 | 设置 | Edit `config.jsonc` values such as storage location, injection mode, sub-agent mode, embeddings, and max memories |
+
+The Viewer UI features a modern dark theme, Lucide icon system, card-based layouts with gradient surfaces, fade/slide animations, responsive mobile layout, and virtual scrolling for large memory lists.
 
 For development, run the backend and Vite UI separately:
 
@@ -306,6 +321,39 @@ By default, explicit intent memories are stored at **project scope** (only visib
 
 ---
 
+## Memory Injection Tracking
+
+True-Mem v1.4.1 introduces a complete memory injection tracking system that answers the fundamental question: **"Which memories were injected into which sessions?"**
+
+### How It Works
+
+Every time memories are injected into a model prompt (main agent or sub-agent), True-Mem records:
+- Which session received the injection
+- Which memories were injected (by memory ID)
+- When the injection occurred
+- The relevance score of each memory at injection time
+- The injection context (truncated prompt context that triggered selection)
+
+These records are stored in the `memory_injections` table in SQLite, linked to both `sessions` and `memory_units` via foreign keys.
+
+### Injection Entry Points
+
+| Entry Point | Trigger | Coverage |
+|-------------|---------|----------|
+| `experimental.chat.system.transform` | Every model request to the main LLM | Main agent prompts |
+| `tool.execute.before` | Every `task`/`background_task` call | Sub-agent prompts |
+| `experimental.session.compacting` | Session compaction event | Compacted session summaries |
+
+### Viewer Integration
+
+Open the **会话记录** (Sessions) tab in the Viewer to:
+- Browse all sessions with pagination
+- See which sessions received memory injections and how many
+- Click into a session to view its full injection timeline
+- Each injection entry shows memory summary, classification, store (LTM/STM), relevance score, and timestamp
+
+---
+
 ## Advanced: Semantic Embeddings (Experimental)
 
 True-Mem includes an **experimental** NLP embeddings feature that provides semantic similarity search beyond basic Jaccard matching.
@@ -363,7 +411,7 @@ To disable, set to `0` or remove the line from config.
 cat ~/.true-mem/config.jsonc | grep embeddingsEnabled
 
 # Check logs for [embeddings=true] tag
-tail -f ~/.true-mem/plugin-debug.log | grep "\[embeddings=true\]"
+tail -f ~/.true-mem/plugin-debug.log | grep "embeddings"
 ```
 
 ---
@@ -373,42 +421,151 @@ tail -f ~/.true-mem/plugin-debug.log | grep "\[embeddings=true\]"
 ```
 true-mem/
 ├── src/
-│   ├── index.ts                 # Entry point with fire-and-forget init
-│   ├── state.ts                 # Plugin state management
-│   ├── logger.ts                # File-based debug logging
-│   ├── shutdown.ts              # Graceful shutdown handling
-│   ├── config/
-│   │   ├── config.ts            # JSONC config loading with comments
-│   │   ├── state.ts             # Runtime state persistence
-│   │   ├── migration.ts         # Config migration (v1.2 → v1.3)
-│   │   └── injection-mode.ts    # Injection mode utilities
-│   ├── storage/
-│   │   ├── sqlite-adapter.ts    # bun:sqlite + node:sqlite runtime adapter
-│   │   └── database.ts          # MemoryDatabase class with scope filtering
-│   ├── memory/
-│   │   ├── patterns.ts          # Multilingual patterns (15 languages)
-│   │   ├── negative-patterns.ts # False positive prevention
-│   │   ├── role-patterns.ts     # Role-aware extraction (Human vs Assistant)
-│   │   ├── classifier.ts        # Four-layer defense + role validation
-│   │   ├── embeddings.ts        # Jaccard similarity search
-│   │   ├── embeddings-nlp.ts    # NLP embeddings worker management
-│   │   ├── embedding-worker.ts  # Worker process for transformer model
-│   │   └── reconsolidate.ts     # Conflict resolution
-│   ├── extraction/
-│   │   └── queue.ts             # Fire-and-forget extraction queue
+│   ├── index.ts                     # Plugin entry point with fire-and-forget init + hot-reload
+│   ├── state.ts                     # Plugin state management
+│   ├── logger.ts                    # File-based debug logging
+│   ├── shutdown.ts                  # Graceful shutdown (LIFO handlers, no signal traps)
+│   ├── acl/                         # Access control layer
 │   ├── adapters/
 │   │   └── opencode/
-│   │       ├── index.ts         # Full extraction + injection hooks
-│   │       ├── injection.ts     # Memory injection logic
-│   │       └── injection-tracker.ts  # Session injection tracking
-│   └── utils/
-│       ├── version.ts           # Version utilities
-│       ├── jsonc.ts             # JSONC parser with comments
-│       └── toast.ts             # Toast notifications
-└── dist/
-    ├── index.js                 # Bundle (~155KB)
-    └── memory/
-        └── embedding-worker.js  # Worker bundle (~3KB)
+│   │       ├── index.ts             # Full extraction + injection hooks
+│   │       ├── injection.ts         # Memory injection selection + wrapping logic
+│   │       ├── injection-tracker.ts # Session injection tracking (mode 0/1)
+│   │       ├── memory-retrieval.ts  # Compaction query memory retrieval
+│   │       ├── retrieve-pipeline-routing.ts  # Pipeline-controlled retrieval routing
+│   │       ├── session-lifecycle.ts # Session lifecycle hook handlers
+│   │       ├── process-session.ts   # Session message extraction pipeline
+│   │       └── session-manager.ts   # Session lifecycle management
+│   ├── config/
+│   │   ├── config.ts                # JSONC config loading with env override
+│   │   ├── state.ts                 # Runtime state persistence
+│   │   ├── migration.ts             # Config migration (v1.2 → v1.3)
+│   │   └── injection-mode.ts       # Injection mode utilities
+│   ├── domain/                      # Domain logic boundary
+│   ├── extraction/
+│   │   └── queue.ts                 # Fire-and-forget sequential extraction queue
+│   ├── llm/                         # LLM provider abstraction layer
+│   ├── memory/
+│   │   ├── patterns.ts              # Multilingual patterns (15 languages)
+│   │   ├── negative-patterns.ts     # False positive prevention (10 languages)
+│   │   ├── role-patterns.ts         # Role-aware extraction (Human vs Assistant)
+│   │   ├── classifier.ts            # Four-layer defense + role validation
+│   │   ├── similarity.ts            # Jaccard similarity search
+│   │   ├── embeddings-nlp.ts        # NLP embeddings worker management
+│   │   ├── embedding-worker.ts      # Worker process for transformer model
+│   │   └── reconsolidate.ts         # Conflict resolution
+│   ├── pipeline/
+│   │   ├── index.ts                 # Pipeline registry and exports
+│   │   ├── types.ts                 # Pipeline type definitions
+│   │   ├── manager.ts               # Pipeline execution engine
+│   │   ├── ingest.ts                # Memory ingest pipeline context
+│   │   ├── retrieve.ts              # Memory retrieve pipeline context
+│   │   ├── decay.ts                 # Memory decay pipeline context
+│   │   ├── maintenance.ts           # Memory maintenance pipeline context
+│   │   ├── ingest-bridge.ts         # Controlled cutover bridge for process-session.ts
+│   │   └── steps/
+│   │       ├── ingest.ts            # Ingest pipeline steps (normalize/classify/dedupe/persist)
+│   │       ├── retrieve.ts          # Retrieve pipeline steps (scope/sqlite/query/vector_hint)
+│   │       └── pattern-detect.ts    # Pattern detection pipeline step
+│   ├── scope/                       # Scope context management
+│   ├── storage/
+│   │   ├── port.ts                  # StorageProvider port interface (session/event/read/write/maintenance/injection)
+│   │   └── database.ts              # MemoryDatabase implementation with scope filtering + safe JSON parsing
+│   ├── templates/                   # Template files
+│   ├── types/
+│   │   ├── config.ts                # Config type definitions with DEFAULT_USER_CONFIG
+│   │   └── database.ts              # MemoryUnit, Session, Event type definitions
+│   ├── upgrade/                     # Upgrade/migration utilities
+│   ├── utils/
+│   │   ├── version.ts               # Version utilities
+│   │   ├── jsonc.ts                 # JSONC parser with comments
+│   │   └── toast.ts                 # Toast notifications
+│   └── viewer/
+│       ├── server/
+│       │   ├── index.ts             # Hono server entry point (port 3456)
+│       │   ├── db.ts                # Viewer-side DB read adapter
+│       │   └── routes/
+│       │       ├── memories.ts      # Memory CRUD + search/filter routes
+│       │       ├── sessions.ts      # Session list/detail/injection routes
+│       │       ├── stats.ts         # Statistics aggregation routes
+│       │       ├── monitor.ts       # Monitoring/memory health routes
+│       │       └── settings.ts      # Config read/write routes
+│       ├── shared/
+│       │   └── types.ts             # Shared Viewer types
+│       └── ui/
+│           ├── App.tsx              # Main app with 5-tab navigation + icons
+│           ├── state.ts             # Viewer state management
+│           ├── components/
+│           │   ├── shared/          # Shared UI components (loading, empty, etc.)
+│           │   └── tabs/
+│           │       ├── FeedTab.tsx      # Memory list with virtual scrolling + smart refresh
+│           │       ├── SessionsTab.tsx  # Session list + injection timeline
+│           │       ├── StatsTab.tsx     # Charts and statistics
+│           │       ├── MonitorTab.tsx   # System monitoring
+│           │       └── SettingsTab.tsx  # Configuration editor
+│           ├── i18n/                # Internationalization
+│           ├── lib/api/             # API client utilities
+│           └── styles/
+│               └── index.css        # Tailwind styles with custom dark theme
+├── dist/
+│   ├── index.js                     # Plugin bundle (~218 KB)
+│   ├── memory/
+│   │   └── embedding-worker.js      # Worker bundle (~3 KB)
+│   ├── viewer/
+│   │   └── index.html               # Built Viewer SPA
+│   └── viewer-server/
+│       └── index.js                 # Viewer server bundle (~113 KB)
+```
+
+---
+
+## Pipeline Engine
+
+True-Mem v1.4.1 introduces a controlled pipeline engine architecture for safe migration from legacy v1 code paths:
+
+### Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Non-destructive** | All pipeline features are off by default; legacy paths unchanged |
+| **Controlled cutover** | Each pipeline replaces one legacy path at a time, with feature flags |
+| **Fallback safety** | Pipeline failure must never block or corrupt the legacy code path |
+| **Shadow-run comparison** | New pipeline paths run alongside legacy for diff telemetry |
+
+### Available Pipelines
+
+| Pipeline | Purpose | Status |
+|----------|---------|--------|
+| `memory.ingest` | Normalize, classify, deduplicate, persist memory from session content | Controlled (off by default) |
+| `memory.retrieve` | Scope-enforced SQLite-first retrieval with optional query ranking | Controlled (off by default) |
+| `memory.decay` | Apply forgetting curve decay to episodic memories | Legacy (v1 path active) |
+| `memory.maintenance` | Consolidation and maintenance operations | Legacy (v1 path active) |
+
+### Controlled Cutover Flow
+
+```
+Session Message
+     │
+     ▼
+┌─────────────────────┐
+│  Legacy Extraction   │  (always active)
+│  v1 classifier       │
+│  v1 database write   │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐  ┌──────────────────────┐
+│  Ingest Pipeline     │  │  Shadow-run (if       │
+│  TRUE_MEM_INGEST_    │  │  enabled) compares    │
+│  WRITE=1             │  │  v1 vs pipeline       │
+└─────────────────────┘  └──────────────────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  Retrieve Pipeline   │  (if TRUE_MEM_RETRIEVE_ │
+│  SQLite-first scope  │   PIPELINE=1)
+│  query routing       │
+└─────────────────────┘
 ```
 
 ---
@@ -417,13 +574,15 @@ true-mem/
 
 | Type | Decay | Store | Scope | Example |
 |------|-------|-------|-------|---------|
-| **constraint** | Never | STM | Global | "Never use `var`" |
-| **preference** | Never | STM | Global | "Prefers functional style" |
+| **constraint** | Never | STM/LTM | Global | "Never use `var`" |
+| **preference** | Never | STM/LTM | Global | "Prefers functional style" |
 | **learning** | Never | LTM | Global | "Learned bun:sqlite API" |
-| **procedural** | Never | STM | Global | "Run tests before commit" |
+| **procedural** | Never | STM/LTM | Global | "Run tests before commit" |
 | **decision** | Never | LTM | Project | "Decided SQLite over Postgres" |
-| **semantic** | Never | STM | Project | "API uses REST, not GraphQL" |
+| **semantic** | Never | STM/LTM | Project | "API uses REST, not GraphQL" |
 | **episodic** | Yes (7d) | STM | Project | "Yesterday we refactored auth" |
+
+Note: `constraint` and `procedural` can be promoted to LTM via strength scoring. Scope is determined by `project_scope` column at time of injection, not classification alone.
 
 ---
 
@@ -456,6 +615,10 @@ true-mem/
 
 - **Episodic memories**: Decay using Ebbinghaus formula (lambda = 0.05 STM, 0.01 LTM)
 - **All other types**: Permanent (no decay)
+
+### Safe JSON Parsing
+
+Injection and extraction paths now include safe JSON parsing wrappers (`safeParseJsonObject`, `safeParseJsonStringArray`) to gracefully degrade malformed `tags`, `associations`, `source_event_ids`, or `metadata` fields to empty defaults with a log warning, preventing a single bad data field from failing an entire injection cycle.
 
 ---
 
@@ -497,11 +660,15 @@ Inspired by [PsychMem](https://github.com/muratg98/psychmem) - a pioneering plug
 # View logs
 tail -f ~/.true-mem/plugin-debug.log
 
-# Query database
+# Query active memories by strength
 sqlite3 ~/.true-mem/memory.db "SELECT classification, summary, strength FROM memory_units WHERE status = 'active' ORDER BY strength DESC LIMIT 10;"
+
+# Check injection history per session
+sqlite3 ~/.true-mem/memory.db "SELECT mi.session_id, mi.memory_id, mu.summary, mi.injected_at FROM memory_injections mi LEFT JOIN memory_units mu ON mi.memory_id = mu.id ORDER BY mi.injected_at DESC LIMIT 10;"
 ```
 
 ---
 
 **License**: MIT
+**Version**: 1.4.1
 **Status**: Actively maintained
