@@ -330,6 +330,22 @@ export async function createTrueMemoryPlugin(
           // Update the prompt in output args
           outputWithArgs.args.prompt = `${wrappedContext}\n\n${originalPrompt}`;
 
+          // Record injection history for sub-agent
+          const sessionId = toolInput.sessionID;
+          if (sessionId && memories.length > 0) {
+            try {
+              const injections = memories.map(mem => ({
+                memoryId: mem.id,
+                injectionContext: originalPrompt.slice(0, 500),
+                relevanceScore: mem.strength,
+              }));
+              state.db.recordMemoryInjectionBatch(sessionId, injections);
+              log(`Recorded ${injections.length} sub-agent memory injections for session ${sessionId.slice(0, 8)}...`);
+            } catch (error) {
+              log(`Failed to record sub-agent injection history: ${error}`);
+            }
+          }
+
           log(`Atomic injection: ${memories.length} memories injected for ${toolName}`);
         }
       } catch (error) {
@@ -438,6 +454,22 @@ export async function createTrueMemoryPlugin(
           // Mark as injected after successful injection (mode 0 = session-start)
           if (injectionMode === 0 && sessionId) {
             markInjected(sessionId);
+          }
+          
+          // Record injection history to database
+          if (sessionId && allMemories.length > 0) {
+            try {
+              const injections = allMemories.map(mem => ({
+                memoryId: mem.id,
+                injectionContext: queryContext.slice(0, 500), // Truncate to 500 chars
+                relevanceScore: mem.strength,
+              }));
+              state.db.recordMemoryInjectionBatch(sessionId, injections);
+              log(`Recorded ${injections.length} memory injections for session ${sessionId.slice(0, 8)}...`);
+            } catch (error) {
+              log(`Failed to record injection history: ${error}`);
+              // Non-fatal error, continue
+            }
           }
           
           log(`Global injection: ${allMemories.length} memories injected into system prompt [embeddings=${embeddingsEnabled}]`);

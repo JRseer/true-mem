@@ -1,6 +1,6 @@
 import type { MemoryFilters } from '../shared/types.js';
 
-export type ViewerTab = 'feed' | 'stats' | 'monitor' | 'settings';
+export type ViewerTab = 'feed' | 'stats' | 'monitor' | 'settings' | 'sessions';
 
 export interface ViewerState {
   tab: ViewerTab;
@@ -40,7 +40,7 @@ export function setFilters(filters: MemoryFilters): void {
 
 function readTabFromUrl(): ViewerTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
-  return tab === 'stats' || tab === 'monitor' || tab === 'settings' ? tab : 'feed';
+  return tab === 'stats' || tab === 'monitor' || tab === 'settings' || tab === 'sessions' ? tab : 'feed';
 }
 
 function numberParam(name: string, fallback: number): number {

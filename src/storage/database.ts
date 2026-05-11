@@ -300,6 +300,11 @@ export class MemoryDatabase implements StorageProvider {
 
         this.db.exec('COMMIT');
         log('Schema initialized successfully');
+
+        // A fresh database starts from the consolidated v1 schema, then must
+        // immediately receive incremental migrations so tables added after v1
+        // (for example memory_injections) exist before first runtime use.
+        this.applyMigrations(1);
       } catch (error) {
         try {
           this.db.exec('ROLLBACK');
@@ -404,6 +409,48 @@ export class MemoryDatabase implements StorageProvider {
           log('Migration v4 failed, rolled back', error);
         } catch (rollbackError) {
           log('Failed to rollback migration v4', rollbackError);
+        }
+        throw error;
+      }
+    }
+
+    // Migration to version 5: Add memory_injections table for tracking memory usage in sessions
+    if (currentVersion < 5) {
+      log('Applying migration v5: Adding memory_injections table...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS memory_injections (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            memory_id TEXT NOT NULL,
+            injected_at TEXT NOT NULL,
+            injection_context TEXT,
+            relevance_score REAL,
+            was_used INTEGER DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES sessions(id),
+            FOREIGN KEY (memory_id) REFERENCES memory_units(id)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_injections_session ON memory_injections(session_id);
+          CREATE INDEX IF NOT EXISTS idx_injections_memory ON memory_injections(memory_id);
+          CREATE INDEX IF NOT EXISTS idx_injections_time ON memory_injections(injected_at);
+        `);
+
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          5,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v5 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v5 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v5', rollbackError);
         }
         throw error;
       }
@@ -1009,7 +1056,151 @@ export class MemoryDatabase implements StorageProvider {
     return promotedCount;
   }
 
+  // Memory Injection Tracking
+  recordMemoryInjection(
+    sessionId: string,
+    memoryId: string,
+    injectionContext?: string,
+    relevanceScore?: number
+  ): void {
+    this.ensureInit();
+    const id = uuidv4();
+    const injectedAt = new Date().toISOString();
+
+    this.db.prepare(`
+      INSERT INTO memory_injections (id, session_id, memory_id, injected_at, injection_context, relevance_score, was_used)
+      VALUES (?, ?, ?, ?, ?, ?, 0)
+    `).run(id, sessionId, memoryId, injectedAt, injectionContext ?? null, relevanceScore ?? null);
+  }
+
+  recordMemoryInjectionBatch(
+    sessionId: string,
+    injections: Array<{ memoryId: string; injectionContext?: string; relevanceScore?: number }>
+  ): void {
+    this.ensureInit();
+    const injectedAt = new Date().toISOString();
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO memory_injections (id, session_id, memory_id, injected_at, injection_context, relevance_score, was_used)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+      `);
+
+      for (const injection of injections) {
+        const id = uuidv4();
+        stmt.run(
+          id,
+          sessionId,
+          injection.memoryId,
+          injectedAt,
+          injection.injectionContext ?? null,
+          injection.relevanceScore ?? null
+        );
+      }
+
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  getSessionInjections(sessionId: string): Array<{
+    id: string;
+    memoryId: string;
+    memorySummary: string;
+    classification: string;
+    injectedAt: string;
+    relevanceScore: number | null;
+  }> {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT 
+        mi.id,
+        mi.memory_id as memoryId,
+        mu.summary as memorySummary,
+        mu.classification,
+        mi.injected_at as injectedAt,
+        mi.relevance_score as relevanceScore
+      FROM memory_injections mi
+      JOIN memory_units mu ON mi.memory_id = mu.id
+      WHERE mi.session_id = ?
+      ORDER BY mi.injected_at DESC
+    `).all(sessionId) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      memoryId: row.memoryId,
+      memorySummary: row.memorySummary,
+      classification: row.classification,
+      injectedAt: row.injectedAt,
+      relevanceScore: row.relevanceScore,
+    }));
+  }
+
+  getMemoryUsageHistory(memoryId: string, limit: number = 50): Array<{
+    sessionId: string;
+    injectedAt: string;
+    project: string;
+  }> {
+    this.ensureInit();
+    const rows = this.db.prepare(`
+      SELECT 
+        mi.session_id as sessionId,
+        mi.injected_at as injectedAt,
+        s.project
+      FROM memory_injections mi
+      JOIN sessions s ON mi.session_id = s.id
+      WHERE mi.memory_id = ?
+      ORDER BY mi.injected_at DESC
+      LIMIT ?
+    `).all(memoryId, limit) as any[];
+
+    return rows.map(row => ({
+      sessionId: row.sessionId,
+      injectedAt: row.injectedAt,
+      project: row.project,
+    }));
+  }
+
   // Helpers
+  private safeParseJsonObject(value: unknown, fallback: Record<string, unknown> | undefined, context: string): Record<string, unknown> | undefined {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return fallback;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      log(`Invalid JSON object for ${context}; using fallback`);
+      return fallback;
+    } catch (error) {
+      log(`Failed to parse JSON object for ${context}; using fallback: ${error}`);
+      return fallback;
+    }
+  }
+
+  private safeParseJsonStringArray(value: unknown, fallback: string[], context: string): string[] {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return fallback;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === 'string');
+      }
+      log(`Invalid JSON array for ${context}; using fallback`);
+      return fallback;
+    } catch (error) {
+      log(`Failed to parse JSON array for ${context}; using fallback: ${error}`);
+      return fallback;
+    }
+  }
+
   private rowToSession(row: any): Session {
     return {
       id: row.id,
@@ -1017,7 +1208,7 @@ export class MemoryDatabase implements StorageProvider {
       startedAt: new Date(row.started_at),
       endedAt: row.ended_at ? new Date(row.ended_at) : undefined,
       status: row.status,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: this.safeParseJsonObject(row.metadata, undefined, `session ${row.id}.metadata`),
       transcriptPath: row.transcript_path ?? undefined,
       transcriptWatermark: row.transcript_watermark ?? 0,
       messageWatermark: row.message_watermark ?? 0,
@@ -1034,7 +1225,7 @@ export class MemoryDatabase implements StorageProvider {
       toolName: row.tool_name ?? undefined,
       toolInput: row.tool_input ?? undefined,
       toolOutput: row.tool_output ?? undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: this.safeParseJsonObject(row.metadata, undefined, `event ${row.id}.metadata`),
     };
   }
 
@@ -1045,7 +1236,7 @@ export class MemoryDatabase implements StorageProvider {
       store: row.store as MemoryStore,
       classification: row.classification as MemoryClassification,
       summary: row.summary,
-      sourceEventIds: JSON.parse(row.source_event_ids),
+      sourceEventIds: this.safeParseJsonStringArray(row.source_event_ids, [], `memory ${row.id}.source_event_ids`),
       projectScope: row.project_scope ?? undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
@@ -1059,8 +1250,8 @@ export class MemoryDatabase implements StorageProvider {
       interference: row.interference,
       strength: row.strength,
       decayRate: row.decay_rate,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      associations: row.associations ? JSON.parse(row.associations) : [],
+      tags: this.safeParseJsonStringArray(row.tags, [], `memory ${row.id}.tags`),
+      associations: this.safeParseJsonStringArray(row.associations, [], `memory ${row.id}.associations`),
       status: row.status as MemoryStatus,
       version: row.version,
       evidence: [],
