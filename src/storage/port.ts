@@ -12,6 +12,8 @@ import type { DerivedIndexIdentity, DerivedIndexState } from './index-status.js'
 export interface MemoryCreateFeatures {
   readonly sessionId?: string | undefined;
   readonly projectScope?: string | null | undefined;
+  readonly taskScope?: string | null | undefined;
+  readonly expiresAt?: Date | string | null | undefined;
   readonly importance?: number | undefined;
   readonly utility?: number | undefined;
   readonly novelty?: number | undefined;

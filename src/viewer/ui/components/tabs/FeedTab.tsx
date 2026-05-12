@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Archive, ChevronDown, ChevronLeft, ChevronRight, Clock, Filter, Loader2, RefreshCw, RotateCcw, Search, Tag, Trash2, Zap } from 'lucide-preact';
+import { Archive, ChevronDown, ChevronLeft, ChevronRight, Clock, Filter, Loader2, RefreshCw, RotateCcw, Search, Tag, Trash2, XCircle, Zap } from 'lucide-preact';
 import type { MemoryFilters, PaginatedMemoriesResponse, ViewerMemory, ViewerMemoryClassification, ViewerMemoryStatus } from '../../../shared/types.js';
 import { classificationLabels, copy, statusLabels, storeLabels } from '../../i18n/zh-CN.js';
-import { fetchMemories, patchMemory } from '../../lib/api/client.js';
+import { endTaskScope, fetchMemories, patchMemory } from '../../lib/api/client.js';
 import { formatDateTime, formatNumber } from '../../lib/format.js';
 import { setFilters, state } from '../../state.js';
 import { StatusBadge } from '../shared/StatusBadge.js';
 
-const EMPTY_RESULT: PaginatedMemoriesResponse = { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1, projects: [] };
+const EMPTY_RESULT: PaginatedMemoriesResponse = { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1, projects: [], taskScopes: [] };
 const VIRTUAL_VIEWPORT_HEIGHT = 680;
 const COLLAPSED_ROW_HEIGHT = 178;
 const EXPANDED_ROW_ESTIMATED_HEIGHT = 920;
@@ -20,6 +20,7 @@ export function FeedTab() {
   const [filters, setLocalFilters] = useState<MemoryFilters>(state.filters);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -60,6 +61,15 @@ export function FeedTab() {
     await load();
   }
 
+  async function endSelectedTaskScope(): Promise<void> {
+    const taskScope = filters.taskScope?.trim();
+    if (!taskScope) return;
+    if (!window.confirm(`结束任务 scope "${taskScope}" 的临时记忆？`)) return;
+    const result = await endTaskScope(taskScope);
+    setNotice(`已结束任务 scope "${result.taskScope}"，标记 ${formatNumber(result.changes)} 条记忆为 deleted`);
+    await load();
+  }
+
   return (
     <section aria-labelledby="feed-title" class="space-y-4">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -67,10 +77,18 @@ export function FeedTab() {
           <h2 id="feed-title" class="text-xl font-semibold text-white">{copy.feed.title}</h2>
           <p class="mt-1 max-w-2xl text-sm text-slate-400">{copy.feed.description}</p>
         </div>
-        <button class="inline-flex items-center justify-center gap-2 rounded-xl border border-mint-400/30 bg-mint-400/10 px-4 py-2 text-sm font-semibold text-mint-200 transition hover:border-mint-300 hover:bg-mint-400/15 focus-visible:ring-2 focus-visible:ring-mint-400" type="button" onClick={() => void load()}>
-          {loading ? <Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw class="h-4 w-4" aria-hidden="true" />}
-          {copy.common.refresh}
-        </button>
+        <div class="flex flex-wrap gap-2">
+          {filters.taskScope ? (
+            <button class="inline-flex items-center justify-center gap-2 rounded-xl border border-accent-rose/30 bg-accent-rose/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-accent-rose/50 hover:bg-accent-rose/15 focus-visible:ring-2 focus-visible:ring-accent-rose" type="button" onClick={() => void endSelectedTaskScope()}>
+              <XCircle class="h-4 w-4" aria-hidden="true" />
+              结束任务
+            </button>
+          ) : null}
+          <button class="inline-flex items-center justify-center gap-2 rounded-xl border border-mint-400/30 bg-mint-400/10 px-4 py-2 text-sm font-semibold text-mint-200 transition hover:border-mint-300 hover:bg-mint-400/15 focus-visible:ring-2 focus-visible:ring-mint-400" type="button" onClick={() => void load()}>
+            {loading ? <Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw class="h-4 w-4" aria-hidden="true" />}
+            {copy.common.refresh}
+          </button>
+        </div>
       </div>
 
       <div class="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-dark-900 via-dark-950 to-slate-950 shadow-soft">
@@ -93,11 +111,12 @@ export function FeedTab() {
                 <input class="w-full bg-transparent text-white outline-none placeholder:text-slate-600" name="search" value={filters.search ?? ''} onInput={(event) => updateFilters({ search: event.currentTarget.value, page: 1 })} placeholder={copy.feed.searchPlaceholder} />
               </span>
             </label>
-            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <FilterSelect label={copy.feed.storeLabel} name="store" value={filters.store ?? 'all'} options={[['all', storeLabels.all], ['stm', storeLabels.stm], ['ltm', storeLabels.ltm]]} onChange={(value) => updateFilters({ store: value === 'stm' || value === 'ltm' ? value : 'all', page: 1 })} />
               <FilterSelect label={copy.feed.classificationLabel} name="classification" value={filters.classification ?? 'all'} options={classificationOptions()} onChange={(value) => updateFilters({ classification: classificationValue(value), page: 1 })} />
               <FilterSelect label={copy.feed.statusLabel} name="status" value={filters.status ?? 'active'} options={statusOptions()} onChange={(value) => updateFilters({ status: statusValue(value), page: 1 })} />
               <FilterSelect label={copy.feed.projectLabel} name="project" value={filters.project ?? ''} options={projectOptions(data.projects)} onChange={(value) => updateFilters({ project: value, page: 1 })} />
+              <FilterSelect label="任务 scope" name="taskScope" value={filters.taskScope ?? ''} options={taskScopeOptions(data.taskScopes)} onChange={(value) => updateFilters({ taskScope: value, page: 1 })} />
               <label class="text-sm text-slate-300">
                 {copy.feed.strengthLabel}
                 <input class="mt-1 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white transition focus-visible:border-mint-400 focus-visible:ring-2 focus-visible:ring-mint-400/40" name="minStrength" type="number" min="0" max="1" step="0.05" value={filters.minStrength ?? ''} onInput={(event) => updateFilters({ minStrength: parseOptionalStrength(event.currentTarget.value), page: 1 })} aria-describedby="strength-hint" />
@@ -107,7 +126,7 @@ export function FeedTab() {
           </div>
         ) : null}
       </div>
-      <p aria-live="polite" class={`text-sm ${error ? 'text-accent-rose' : 'text-slate-400'}`}>{error || copy.feed.total(formatNumber(data.total), data.page, data.totalPages)}</p>
+      <p aria-live="polite" class={`text-sm ${error ? 'text-accent-rose' : notice ? 'text-mint-200' : 'text-slate-400'}`}>{error || notice || copy.feed.total(formatNumber(data.total), data.page, data.totalPages)}</p>
       <div>
         <VirtualizedMemoryList items={data.items} expandedId={expanded} onToggle={(memoryId) => setExpanded(expanded === memoryId ? null : memoryId)} onUpdate={updateMemory} />
         {data.items.length === 0 ? <EmptyState loading={loading} /> : null}
@@ -229,6 +248,8 @@ function MemoryRow({ memory, expanded, onToggle, onUpdate }: { memory: ViewerMem
       </div>
       {expanded ? (
         <dl aria-label={copy.feed.detail} class="mt-4 grid gap-3 border-t border-white/10 pt-4 text-sm text-slate-300 md:grid-cols-3 xl:grid-cols-4 animate-fade-in">
+          <Detail label="任务 scope" value={memory.taskScope ?? '-'} />
+          <Detail label="过期时间" value={formatDateTime(memory.expiresAt)} />
           <Detail label="项目" value={memory.projectScope ?? 'global'} />
           <Detail label="会话 ID" value={memory.sessionId ?? '-'} />
           <Detail label="版本" value={formatNumber(memory.version)} />
@@ -333,6 +354,10 @@ function statusOptions(): Array<[string, string]> {
 
 function projectOptions(projects: string[]): Array<[string, string]> {
   return [['', copy.common.all], ...projects.map((project): [string, string] => [project, project])];
+}
+
+function taskScopeOptions(taskScopes: string[]): Array<[string, string]> {
+  return [['', copy.common.all], ...taskScopes.map((taskScope): [string, string] => [taskScope, taskScope])];
 }
 
 function classificationValue(value: string): ViewerMemoryClassification | 'all' {

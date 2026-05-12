@@ -19,6 +19,8 @@ export interface ViewerMemory {
   classification: ViewerMemoryClassification;
   summary: string;
   projectScope: string | null;
+  taskScope: string | null;
+  expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
   lastAccessedAt: string | null;
@@ -43,6 +45,7 @@ export interface MemoryFilters {
   classification?: ViewerMemoryClassification | 'all';
   status?: ViewerMemoryStatus | 'all';
   project?: string;
+  taskScope?: string;
   minStrength?: number;
   search?: string;
   page?: number;
@@ -56,11 +59,18 @@ export interface PaginatedMemoriesResponse {
   total: number;
   totalPages: number;
   projects: string[];
+  taskScopes: string[];
 }
 
 export interface MemoryPatchRequest {
   status?: ViewerMemoryStatus;
   classification?: ViewerMemoryClassification;
+}
+
+export interface EndTaskScopeResponse {
+  ok: true;
+  taskScope: string;
+  changes: number;
 }
 
 export interface DistributionItem {

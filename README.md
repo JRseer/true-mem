@@ -319,6 +319,43 @@ By default, explicit intent memories are stored at **project scope** (only visib
 | **Global** | `project_scope = null` | "Remember to _always_ run tests before committing" |
 | **Global** | `project_scope = null` | "Remember that I _always_ use Typescript _in every project_" |
 
+### Temporary Cross-Project Task Memory
+
+Use this when a handoff needs to be visible across projects, but should not become long-term global memory.
+
+1. Set the same task scope before starting the related sessions:
+
+```bash
+export TRUE_MEM_TASK_SCOPE=handoff-a-to-b
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:TRUE_MEM_TASK_SCOPE = "handoff-a-to-b"
+```
+
+2. Store temporary task context with explicit wording:
+
+```
+"Temporary task memory: A task concluded that the API handoff requires ..."
+"临时任务记忆：A任务结论是……，只用于当前任务链路。"
+"跨项目临时上下文：……，任务结束后丢弃。"
+```
+
+Temporary task memories are stored with `task_scope = TRUE_MEM_TASK_SCOPE`, `project_scope = null`, `classification = episodic`, and `expires_at` set from `TRUE_MEM_TASK_MEMORY_TTL_HOURS` (default: 24 hours). They are injected in any project only while the same `TRUE_MEM_TASK_SCOPE` is active and the memory has not expired.
+
+To end the current task handoff, send:
+
+```
+"结束当前任务记忆"
+"结束任务记忆：handoff-a-to-b"
+"end current task memory"
+"end task memory: handoff-a-to-b"
+```
+
+True-Mem marks active memories for the current or specified task scope as `deleted`. The local viewer also exposes task scope metadata, task-scope filtering, and an "end task" action in the feed tab.
+
 ---
 
 ## Memory Injection Tracking

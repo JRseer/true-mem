@@ -32,10 +32,16 @@ memoriesRoute.get('/', async (c) => {
     const projectRows = db.all(
       `SELECT DISTINCT project_scope FROM memory_units WHERE project_scope IS NOT NULL AND project_scope != '' ORDER BY project_scope`,
     );
+    const taskScopeRows = db.all(
+      `SELECT DISTINCT task_scope FROM memory_units WHERE task_scope IS NOT NULL AND task_scope != '' ORDER BY task_scope`,
+    );
     const total = typeof totalRow?.count === 'number' ? totalRow.count : 0;
     const projects = projectRows
       .map((row) => row.project_scope)
       .filter((project): project is string => typeof project === 'string');
+    const taskScopes = taskScopeRows
+      .map((row) => row.task_scope)
+      .filter((taskScope): taskScope is string => typeof taskScope === 'string');
 
     return {
       items: rows.map(mapMemoryRow),
@@ -44,6 +50,7 @@ memoriesRoute.get('/', async (c) => {
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       projects,
+      taskScopes,
     };
   });
 
@@ -58,6 +65,24 @@ memoriesRoute.get('/:id', async (c) => {
   });
   if (!memory) return c.json({ error: 'Memory not found' }, 404);
   return c.json(memory);
+});
+
+memoriesRoute.post('/task-scopes/:taskScope/end', async (c) => {
+  const taskScope = c.req.param('taskScope').trim();
+  if (!taskScope) return c.json({ error: 'Task scope is required' }, 400);
+
+  const now = new Date().toISOString();
+  const result = await withViewerDb((db) => db.run(
+    `
+      UPDATE memory_units
+      SET status = 'deleted', updated_at = ?, expires_at = COALESCE(expires_at, ?)
+      WHERE status = 'active'
+      AND task_scope = ?
+    `,
+    [now, now, taskScope],
+  ));
+
+  return c.json({ ok: true, taskScope, changes: result.changes });
 });
 
 memoriesRoute.patch('/:id', async (c) => {
@@ -99,6 +124,7 @@ function parseFilters(query: Record<string, string>): MemoryFilters {
       : 'all',
     status: STATUSES.has(query.status as ViewerMemoryStatus) ? (query.status as ViewerMemoryStatus) : 'active',
     project: query.project ?? '',
+    taskScope: query.taskScope ?? '',
     minStrength: boundedNumber(query.minStrength, 0, 1),
     search: query.search ?? '',
     page: boundedInteger(query.page, 1, 10_000) ?? 1,
@@ -124,6 +150,10 @@ function buildWhere(filters: MemoryFilters): { sql: string; params: unknown[] } 
   if (filters.project && filters.project.trim().length > 0) {
     clauses.push('project_scope = ?');
     params.push(filters.project.trim());
+  }
+  if (filters.taskScope && filters.taskScope.trim().length > 0) {
+    clauses.push('task_scope = ?');
+    params.push(filters.taskScope.trim());
   }
   if (filters.minStrength !== undefined) {
     clauses.push('strength >= ?');

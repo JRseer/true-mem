@@ -47,6 +47,9 @@ export interface MemoryIngestExpectedDecision {
   readonly cleanSummary: string;
   readonly storeTarget?: MemoryStore | undefined;
   readonly projectScope?: string | null | undefined;
+  readonly taskScope?: string | null | undefined;
+  readonly expiresAt?: Date | string | null | undefined;
+  readonly tags?: string[] | undefined;
 }
 
 export interface MemoryIngestShadowComparison {
@@ -68,6 +71,9 @@ function toComparableDecision(decision: MemoryIngestDecision): MemoryIngestExpec
     cleanSummary: decision.cleanSummary,
     storeTarget: decision.storeTarget,
     projectScope: decision.projectScope,
+    taskScope: decision.taskScope,
+    expiresAt: decision.expiresAt,
+    tags: decision.tags,
   };
 }
 
@@ -89,7 +95,10 @@ function createShadowMemory(
   sourceEventIds: string[],
   projectScope: string | null | undefined,
   confidence: number | undefined,
-  sessionId: string | undefined
+  sessionId: string | undefined,
+  taskScope: string | null | undefined,
+  expiresAt: Date | string | null | undefined,
+  tags: string[] | undefined
 ): MemoryUnit {
   const timestamp = new Date('1970-01-01T00:00:00.000Z');
   const strength = confidence ?? 0;
@@ -102,6 +111,8 @@ function createShadowMemory(
     summary,
     sourceEventIds,
     projectScope: projectScope ?? undefined,
+    taskScope: taskScope ?? undefined,
+    expiresAt: expiresAt ? new Date(expiresAt) : undefined,
     createdAt: timestamp,
     updatedAt: timestamp,
     lastAccessedAt: timestamp,
@@ -114,7 +125,7 @@ function createShadowMemory(
     interference: 0,
     strength,
     decayRate: 0,
-    tags: ['shadow-ingest'],
+    tags: tags ?? ['shadow-ingest'],
     associations: [],
     status: 'active',
     version: 1,
@@ -132,7 +143,10 @@ function createShadowStoragePort(): StorageWritePort {
       sourceEventIds,
       features?.projectScope,
       features?.confidence,
-      features?.sessionId
+      features?.sessionId,
+      features?.taskScope,
+      features?.expiresAt,
+      features?.tags
     ),
     updateMemoryStrength: () => {},
     updateMemoryStatus: () => {},
@@ -163,6 +177,9 @@ function createWriteIngestDecision(
     baseSignalScore: 0,
     storeTarget: input.decision.storeTarget,
     projectScope: input.decision.projectScope,
+    taskScope: input.decision.taskScope,
+    expiresAt: input.decision.expiresAt,
+    tags: input.decision.tags,
   };
 }
 
@@ -300,6 +317,8 @@ export function compareMemoryIngestShadowDecision(
   pushMismatch(mismatches, 'classification', expected.classification, shadow.classification);
   pushMismatch(mismatches, 'storeTarget', expected.storeTarget, shadow.storeTarget);
   pushMismatch(mismatches, 'projectScope', expected.projectScope, shadow.projectScope);
+  pushMismatch(mismatches, 'taskScope', expected.taskScope, shadow.taskScope);
+  pushMismatch(mismatches, 'expiresAt', expected.expiresAt?.toString(), shadow.expiresAt?.toString());
   pushMismatch(mismatches, 'cleanSummary', expected.cleanSummary, shadow.cleanSummary);
   pushMismatch(mismatches, 'reason', expected.reason, shadow.reason);
 

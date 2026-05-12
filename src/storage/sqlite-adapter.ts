@@ -60,10 +60,10 @@ async function createBunDatabase(dbPath: string): Promise<SqliteDatabase> {
       const stmt = db.prepare(sql);
       return {
         run(...params: unknown[]) {
-          stmt.run(...params);
+          const result = stmt.run(...params) as { changes?: number; lastInsertRowid?: number | bigint } | undefined;
           return {
-            changes: db.changes as number,
-            lastInsertRowid: db.lastInsertRowid as number | bigint,
+            changes: result?.changes ?? (db.changes as number | undefined) ?? 0,
+            lastInsertRowid: result?.lastInsertRowid ?? (db.lastInsertRowid as number | bigint | undefined) ?? 0,
           };
         },
         get(...params: unknown[]) {

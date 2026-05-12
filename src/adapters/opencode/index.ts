@@ -16,6 +16,7 @@ import {
   calculateRoleWeightedScore,
 } from '../../memory/classifier.js';
 import { matchAllPatterns, hasGlobalScopeKeyword, isMemoryListRequest, detectProjectSignals, extractProjectTerms, shouldBeProjectScope } from '../../memory/patterns.js';
+import { getTaskScopeFromEndRequest, isEndTaskMemoryRequest } from '../../memory/task-memory.js';
 import { setLastInjectedMemories, getLastInjectedMemories } from '../../state.js';
 import { getExtractionQueue } from '../../extraction/queue.js';
 import { registerShutdownHandler } from '../../shutdown.js';
@@ -221,6 +222,27 @@ export async function createTrueMemoryPlugin(
       const userText = textParts.join(' ');
 
       if (!userText) return;
+
+      if (isEndTaskMemoryRequest(userText)) {
+        const taskScope = getTaskScopeFromEndRequest(userText);
+        const firstTextPartIndex = output.parts.findIndex(part => part.type === 'text' && 'text' in part);
+        const response = taskScope
+          ? `[TRUE-MEM] 已结束临时任务记忆 scope="${taskScope}"，标记 ${state.db.endTaskScopeMemories(taskScope)} 条记忆为 deleted。`
+          : '[TRUE-MEM] 未指定任务 scope，且当前未设置 TRUE_MEM_TASK_SCOPE，无法结束临时任务记忆。';
+
+        if (firstTextPartIndex !== -1) {
+          const originalPart = output.parts[firstTextPartIndex]!;
+          if ('text' in originalPart) {
+            (output.parts[firstTextPartIndex] as any) = {
+              ...originalPart,
+              text: `${originalPart.text}\n\n${response}`
+            };
+          }
+        }
+
+        log(`Task memory end request handled: ${response}`);
+        return;
+      }
 
       // Check if this is a memory list request
       if (isMemoryListRequest(userText)) {

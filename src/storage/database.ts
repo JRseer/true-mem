@@ -31,6 +31,7 @@ import {
 } from './index-state-store.js';
 import { handleReconsolidation, isRelevant } from '../memory/reconsolidate.js';
 import { getSimilarity, getSimilarityBatch } from '../memory/embeddings.js';
+import { getActiveTaskScope } from '../memory/task-memory.js';
 import { log } from '../logger.js';
 import { getStorageDir, getDatabasePath } from '../config/paths.js';
 import { loadConfig } from '../config.js';
@@ -52,6 +53,11 @@ function ensureDbDirectory(dbPath: string): void {
 function generateContentHash(text: string): string {
   const normalized = text.toLowerCase().trim();
   return createHash('sha256').update(normalized).digest('hex');
+}
+
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 /**
@@ -249,6 +255,8 @@ export class MemoryDatabase implements StorageProvider {
             summary TEXT NOT NULL,
             source_event_ids TEXT NOT NULL,
             project_scope TEXT,
+            task_scope TEXT,
+            expires_at TEXT,
             content_hash TEXT,
 
             created_at TEXT NOT NULL,
@@ -285,6 +293,8 @@ export class MemoryDatabase implements StorageProvider {
           CREATE INDEX IF NOT EXISTS idx_memory_classification ON memory_units(classification);
           CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_units(session_id);
           CREATE INDEX IF NOT EXISTS idx_memory_project_scope ON memory_units(project_scope);
+          CREATE INDEX IF NOT EXISTS idx_memory_task_scope ON memory_units(task_scope);
+          CREATE INDEX IF NOT EXISTS idx_memory_expires_at ON memory_units(expires_at);
           CREATE INDEX IF NOT EXISTS idx_memory_status_strength ON memory_units(status, strength);
           CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memory_units(content_hash);
 
@@ -451,6 +461,46 @@ export class MemoryDatabase implements StorageProvider {
           log('Migration v5 failed, rolled back', error);
         } catch (rollbackError) {
           log('Failed to rollback migration v5', rollbackError);
+        }
+        throw error;
+      }
+    }
+
+    // Migration to version 6: Add temporary task memory scope and expiry metadata
+    if (currentVersion < 6) {
+      log('Applying migration v6: Adding task memory scope columns...');
+      this.db.exec('BEGIN TRANSACTION');
+
+      try {
+        const tableInfo = this.db.prepare('PRAGMA table_info(memory_units)').all() as any[];
+        const hasTaskScope = tableInfo.some(col => col.name === 'task_scope');
+        const hasExpiresAt = tableInfo.some(col => col.name === 'expires_at');
+
+        if (!hasTaskScope) {
+          this.db.exec('ALTER TABLE memory_units ADD COLUMN task_scope TEXT');
+        }
+        if (!hasExpiresAt) {
+          this.db.exec('ALTER TABLE memory_units ADD COLUMN expires_at TEXT');
+        }
+
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_memory_task_scope ON memory_units(task_scope);
+          CREATE INDEX IF NOT EXISTS idx_memory_expires_at ON memory_units(expires_at);
+        `);
+
+        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          6,
+          new Date().toISOString()
+        );
+
+        this.db.exec('COMMIT');
+        log('Migration v6 completed successfully');
+      } catch (error) {
+        try {
+          this.db.exec('ROLLBACK');
+          log('Migration v6 failed, rolled back', error);
+        } catch (rollbackError) {
+          log('Failed to rollback migration v6', rollbackError);
         }
         throw error;
       }
@@ -626,8 +676,8 @@ export class MemoryDatabase implements StorageProvider {
     try {
       // Phase 0: Check for exact duplicate by content hash (O(1) lookup)
       const exactDuplicate = this.db.prepare(
-        `SELECT * FROM memory_units WHERE content_hash = ? AND status = 'active' LIMIT 1`
-      ).get(contentHash) as any;
+        `SELECT * FROM memory_units WHERE content_hash = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?) LIMIT 1`
+      ).get(contentHash, new Date().toISOString()) as any;
 
       if (exactDuplicate) {
         // Found exact duplicate - increment frequency and return
@@ -650,6 +700,7 @@ export class MemoryDatabase implements StorageProvider {
       // Proceed with normal memory creation
       const now = new Date();
       const decayRate = store === 'stm' ? this.config.stmDecayRate : this.config.ltmDecayRate;
+      const expiresAt = toIsoString(features.expiresAt);
 
       const memory: MemoryUnit = {
         id: uuidv4(),
@@ -659,6 +710,8 @@ export class MemoryDatabase implements StorageProvider {
         summary,
         sourceEventIds,
         projectScope: features.projectScope ?? undefined,
+        taskScope: features.taskScope ?? undefined,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
         createdAt: now,
         updatedAt: now,
         lastAccessedAt: now,
@@ -689,11 +742,11 @@ export class MemoryDatabase implements StorageProvider {
 
       this.db.prepare(`
         INSERT INTO memory_units (
-          id, session_id, store, classification, summary, source_event_ids, project_scope, content_hash,
+          id, session_id, store, classification, summary, source_event_ids, project_scope, task_scope, expires_at, content_hash,
           created_at, updated_at, last_accessed_at,
           recency, frequency, importance, utility, novelty, confidence, interference,
           strength, decay_rate, tags, associations, status, version, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         memory.id,
         memory.sessionId ?? null,
@@ -702,6 +755,8 @@ export class MemoryDatabase implements StorageProvider {
         memory.summary,
         JSON.stringify(memory.sourceEventIds),
         memory.projectScope ?? null,
+        memory.taskScope ?? null,
+        expiresAt,
         contentHash,
         memory.createdAt.toISOString(),
         memory.updatedAt.toISOString(),
@@ -742,14 +797,17 @@ export class MemoryDatabase implements StorageProvider {
 
     const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
     const userClassPlaceholders = userLevelClassifications.map(() => '?').join(', ');
+    const activeTaskScope = getActiveTaskScope();
+    const nowIso = new Date().toISOString();
 
     // Session scope: filter by session_id exclusively (session IS the scope boundary)
     if (sessionId) {
-      const params: any[] = [sessionId];
+      const params: any[] = [sessionId, nowIso];
       let query = `
         SELECT * FROM memory_units
         WHERE status = 'active'
         AND session_id = ?
+        AND (expires_at IS NULL OR expires_at > ?)
       `;
 
       if (store) {
@@ -775,21 +833,27 @@ export class MemoryDatabase implements StorageProvider {
       query = `
         SELECT * FROM memory_units
         WHERE status = 'active'
+        AND (expires_at IS NULL OR expires_at > ?)
         AND (
-          project_scope IS NULL
-          OR (project_scope IS NOT NULL AND project_scope = ?)
+          (task_scope IS NULL AND project_scope IS NULL)
+          OR (task_scope IS NULL AND project_scope = ?)
+          ${activeTaskScope ? 'OR task_scope = ?' : ''}
         )
       `;
-      params = [currentProject];
+      params = activeTaskScope ? [nowIso, currentProject, activeTaskScope] : [nowIso, currentProject];
     } else {
       // FIX #2: Return ONLY global memories when project undetermined
       // This prevents cross-project memory leakage
       query = `
         SELECT * FROM memory_units
         WHERE status = 'active'
-        AND project_scope IS NULL
+        AND (expires_at IS NULL OR expires_at > ?)
+        AND (
+          (task_scope IS NULL AND project_scope IS NULL)
+          ${activeTaskScope ? 'OR task_scope = ?' : ''}
+        )
       `;
-      params = [];
+      params = activeTaskScope ? [nowIso, activeTaskScope] : [nowIso];
       log('WARNING: Invalid project scope, returning only global memories');
     }
 
@@ -837,8 +901,9 @@ export class MemoryDatabase implements StorageProvider {
         SELECT * FROM memory_units
         WHERE status = 'active'
         AND session_id = ?
+        AND (expires_at IS NULL OR expires_at > ?)
         LIMIT 1000
-      `).all(sessionId) as any[];
+      `).all(sessionId, new Date().toISOString()) as any[];
 
       const memories = rows.map(this.rowToMemoryUnit.bind(this));
       const pairs = memories.map(memory => ({ text1: queryText, text2: memory.summary }));
@@ -853,16 +918,20 @@ export class MemoryDatabase implements StorageProvider {
     }
 
     // Fetch all active memories for the current scope (same logic as getMemoriesByScope)
+    const activeTaskScope = getActiveTaskScope();
+    const nowIso = new Date().toISOString();
     const query = `
       SELECT * FROM memory_units
       WHERE status = 'active'
+      AND (expires_at IS NULL OR expires_at > ?)
       AND (
-        project_scope IS NULL
-        OR (project_scope IS NOT NULL AND project_scope = ?)
+        (task_scope IS NULL AND project_scope IS NULL)
+        OR (task_scope IS NULL AND project_scope = ?)
+        ${activeTaskScope ? 'OR task_scope = ?' : ''}
       )
       LIMIT 1000
     `;
-    const params: any[] = [currentProject ?? ''];
+    const params: any[] = activeTaskScope ? [nowIso, currentProject ?? '', activeTaskScope] : [nowIso, currentProject ?? ''];
 
     const rows = this.db.prepare(query).all(...params) as any[];
     const memories = rows.map(this.rowToMemoryUnit.bind(this));
@@ -915,6 +984,18 @@ export class MemoryDatabase implements StorageProvider {
   updateMemoryStatus(memoryId: string, status: MemoryStatus): void {
     this.ensureInit();
     this.db.prepare(`UPDATE memory_units SET status = ?, updated_at = ? WHERE id = ?`).run(status, new Date().toISOString(), memoryId);
+  }
+
+  endTaskScopeMemories(taskScope: string): number {
+    this.ensureInit();
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`
+      UPDATE memory_units
+      SET status = 'deleted', updated_at = ?, expires_at = COALESCE(expires_at, ?)
+      WHERE status = 'active'
+      AND task_scope = ?
+    `).run(now, now, taskScope);
+    return result.changes;
   }
 
   incrementFrequency(memoryId: string): void {
@@ -1238,6 +1319,8 @@ export class MemoryDatabase implements StorageProvider {
       summary: row.summary,
       sourceEventIds: this.safeParseJsonStringArray(row.source_event_ids, [], `memory ${row.id}.source_event_ids`),
       projectScope: row.project_scope ?? undefined,
+      taskScope: row.task_scope ?? undefined,
+      expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
       lastAccessedAt: new Date(row.last_accessed_at),

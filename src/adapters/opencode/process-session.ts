@@ -11,6 +11,7 @@ import {
   extractProjectTerms, 
   shouldBeProjectScope 
 } from '../../memory/patterns.js';
+import { resolveTemporaryTaskMemory } from '../../memory/task-memory.js';
 import {
   compareMemoryIngestShadowDecision,
   observeMemoryIngestPipeline,
@@ -308,17 +309,23 @@ export async function processSessionIdle(
         log(`Debug: Classification result: ${classification}, confidence: ${confidence.toFixed(2)}, roleValidated: ${roleValidated}, reason: ${validationReason}`);
 
         if (isMemoryClassification(classification) && roleValidated) {
+          const taskMemory = resolveTemporaryTaskMemory(text);
+          const effectiveClassification: MemoryClassification = taskMemory ? 'episodic' : classification;
+
           // Apply three-layer defense
-          const result = shouldStoreMemory(isolatedContent, classification, baseSignalScore);
+          const result = shouldStoreMemory(isolatedContent, effectiveClassification, baseSignalScore);
           const cleanSummary = extractCleanSummary(isolatedContent);
 
           const userLevelClassifications = ['constraint', 'preference', 'learning', 'procedural'];
           const isExplicitIntent = confidence >= 0.85;
           const hasGlobalKeyword = hasGlobalScopeKeyword(text);
-          const isUserLevel = userLevelClassifications.includes(classification);
+          const isUserLevel = userLevelClassifications.includes(effectiveClassification);
           let scope: string | null;
 
-          if (isUserLevel) {
+          if (taskMemory) {
+            scope = null;
+            log(`Debug: Temporary task memory detected for task_scope=${taskMemory.taskScope}, expiresAt=${taskMemory.expiresAt.toISOString()}`);
+          } else if (isUserLevel) {
             const recentMessages = roleLines
               .slice(-20)
               .map(line => line.text);
@@ -338,9 +345,12 @@ export async function processSessionIdle(
           }
 
           const autoPromoteClassifications = ['learning', 'decision'];
-          const shouldPromoteToLtm = classification !== 'episodic' &&
-            (isExplicitIntent || autoPromoteClassifications.includes(classification));
-          const store = shouldPromoteToLtm ? 'ltm' : 'stm';
+          const shouldPromoteToLtm = effectiveClassification !== 'episodic' &&
+            (isExplicitIntent || autoPromoteClassifications.includes(effectiveClassification));
+          const store = taskMemory ? 'stm' : (shouldPromoteToLtm ? 'ltm' : 'stm');
+          const taskTags = taskMemory
+            ? ['temporary-task', 'cross-project', `task:${taskMemory.taskScope}`]
+            : undefined;
 
           await observeShadowIngestForV1Decision(
             state,
@@ -353,10 +363,13 @@ export async function processSessionIdle(
             {
               store: result.store,
               reason: result.reason,
-              classification,
+              classification: effectiveClassification,
               cleanSummary,
               storeTarget: store,
               projectScope: scope,
+              taskScope: taskMemory?.taskScope,
+              expiresAt: taskMemory?.expiresAt,
+              tags: taskTags,
             }
           );
 
@@ -369,10 +382,13 @@ export async function processSessionIdle(
               {
                 store: result.store,
                 reason: result.reason,
-                classification,
+                classification: effectiveClassification,
                 cleanSummary,
                 storeTarget: store,
                 projectScope: scope,
+                taskScope: taskMemory?.taskScope,
+                expiresAt: taskMemory?.expiresAt,
+                tags: taskTags,
               },
               confidence
             );
@@ -380,19 +396,22 @@ export async function processSessionIdle(
             if (!wroteThroughPipeline) {
               await state.db.createMemory(
                 store,
-                classification,
+                effectiveClassification,
                 cleanSummary,
                 [],
                 {
                   sessionId: effectiveSessionId,
                   projectScope: scope,
+                  taskScope: taskMemory?.taskScope,
+                  expiresAt: taskMemory?.expiresAt,
                   importance: confidence,
                   confidence: confidence,
+                  tags: taskTags,
                 }
               );
             }
 
-            log(`Stored ${classification} memory in ${store.toUpperCase()} (confidence: ${confidence.toFixed(2)}, role: ${role}, reason: ${result.reason})`);
+            log(`Stored ${effectiveClassification} memory in ${store.toUpperCase()} (confidence: ${confidence.toFixed(2)}, role: ${role}, reason: ${result.reason})`);
             messagesProcessed++;
           } else {
             log(`Skipped ${classification} memory: ${result.reason}`);

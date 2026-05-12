@@ -239,6 +239,14 @@ export function classifyWithExplicitIntent(
     /\bmake sure to remember\b:?\s*/gi,
 
     // Chinese - no word boundaries because CJK is not whitespace-delimited
+    /临时任务记忆[:：]?\s*/gi,
+    /临时跨项目记忆[:：]?\s*/gi,
+    /跨项目临时上下文[:：]?\s*/gi,
+    /临时上下文[:：]?\s*/gi,
+    /臨時任務記憶[:：]?\s*/gi,
+    /臨時跨專案記憶[:：]?\s*/gi,
+    /跨專案臨時上下文[:：]?\s*/gi,
+    /臨時上下文[:：]?\s*/gi,
     /请记住[:：]?\s*/gi,
     /帮我记住[:：]?\s*/gi,
     /帮我记一下[:：]?\s*/gi,

@@ -30,6 +30,7 @@ import {
   scoreAssistantAcknowledgment,
   scoreHumanIntent,
 } from '../../src/memory/role-patterns.js';
+import { getTaskScopeFromEndRequest, hasTemporaryTaskMemoryKeyword, isEndTaskMemoryRequest, resolveTemporaryTaskMemory } from '../../src/memory/task-memory.js';
 import { getSimilarityThresholds, isRelevant } from '../../src/memory/reconsolidate.js';
 import type { RoleAwareContext } from '../../src/types.js';
 
@@ -85,6 +86,44 @@ describe('golden: classifier four-layer defense', () => {
     expect(matchAllPatterns('帮我记住 trueMem 使用 SQLite')).toContainEqual(
       expect.objectContaining({ type: 'explicit_remember', source: '帮我记住' })
     );
+  });
+
+  it('recognizes temporary cross-project task memories only with an active task scope', () => {
+    const previous = process.env.TRUE_MEM_TASK_SCOPE;
+    delete process.env.TRUE_MEM_TASK_SCOPE;
+
+    expect(hasTemporaryTaskMemoryKeyword('临时任务记忆：A任务结论只用于当前任务链路')).toBe(true);
+    expect(resolveTemporaryTaskMemory('临时任务记忆：A任务结论只用于当前任务链路')).toBeNull();
+
+    process.env.TRUE_MEM_TASK_SCOPE = 'handoff-a-to-b';
+    const resolved = resolveTemporaryTaskMemory('临时任务记忆：A任务结论只用于当前任务链路');
+    expect(resolved?.taskScope).toBe('handoff-a-to-b');
+    expect(resolved?.expiresAt).toBeInstanceOf(Date);
+
+    if (previous === undefined) {
+      delete process.env.TRUE_MEM_TASK_SCOPE;
+    } else {
+      process.env.TRUE_MEM_TASK_SCOPE = previous;
+    }
+  });
+
+  it('parses task memory end commands with explicit or active task scope', () => {
+    const previous = process.env.TRUE_MEM_TASK_SCOPE;
+    delete process.env.TRUE_MEM_TASK_SCOPE;
+
+    expect(isEndTaskMemoryRequest('结束任务记忆：handoff-a-to-b')).toBe(true);
+    expect(getTaskScopeFromEndRequest('结束任务记忆：handoff-a-to-b')).toBe('handoff-a-to-b');
+    expect(isEndTaskMemoryRequest('结束当前任务记忆')).toBe(true);
+    expect(getTaskScopeFromEndRequest('结束当前任务记忆')).toBeNull();
+
+    process.env.TRUE_MEM_TASK_SCOPE = 'active-scope';
+    expect(getTaskScopeFromEndRequest('end current task memory')).toBe('active-scope');
+
+    if (previous === undefined) {
+      delete process.env.TRUE_MEM_TASK_SCOPE;
+    } else {
+      process.env.TRUE_MEM_TASK_SCOPE = previous;
+    }
   });
 
   it('preserves role-aware human primacy for user-level memories', () => {

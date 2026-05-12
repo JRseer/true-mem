@@ -196,6 +196,8 @@ export interface MemoryUnit {
   summary: string;
   sourceEventIds: string[];
   projectScope?: string | undefined;
+  taskScope?: string | undefined;
+  expiresAt?: Date | undefined;
 
   createdAt: Date;
   updatedAt: Date;

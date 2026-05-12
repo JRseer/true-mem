@@ -1,5 +1,6 @@
 import { extractCleanSummary } from '../../adapters/opencode/message-parser.js';
 import { createV1TrueMemDomainAdapter, type TrueMemDomainPort } from '../../domain/index.js';
+import { resolveTemporaryTaskMemory } from '../../memory/task-memory.js';
 import type { PipelineContext, WorkflowStep } from '../types.js';
 import type { MemoryCreateFeatures, StorageWritePort } from '../../storage/port.js';
 import type {
@@ -30,6 +31,9 @@ export interface MemoryIngestDecision {
   readonly baseSignalScore: number;
   readonly storeTarget?: MemoryStore | undefined;
   readonly projectScope?: string | null | undefined;
+  readonly taskScope?: string | null | undefined;
+  readonly expiresAt?: Date | string | null | undefined;
+  readonly tags?: string[] | undefined;
 }
 
 export interface MemoryIngestDedupeDecision {
@@ -198,24 +202,30 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
       return context;
     }
 
+    const taskMemory = resolveTemporaryTaskMemory(text);
+    const effectiveClassification = taskMemory ? 'episodic' : classificationResult.classification;
     const storageDecision = domain.shouldStoreMemory(
       classificationResult.isolatedContent,
-      classificationResult.classification,
+      effectiveClassification,
       baseSignalScore
     );
     const worktree = readString(context.metadata, 'worktree');
-    const projectScope = worktree
+    const projectScope = taskMemory
+      ? null
+      : worktree
       ? domain.resolveProjectScope(classificationResult.classification, text, {
           recentMessages: getRecentMessages(context.metadata, text),
           worktree,
         }).projectScope
       : undefined;
-    const storeDecision = domain.resolveStore(classificationResult.classification, classificationResult.confidence);
+    const storeDecision = taskMemory
+      ? { storeTarget: 'stm' as const }
+      : domain.resolveStore(classificationResult.classification, classificationResult.confidence);
 
     context.metadata.ingestDecision = {
       store: storageDecision.store,
       reason: storageDecision.reason,
-      classification: classificationResult.classification,
+      classification: effectiveClassification,
       confidence: classificationResult.confidence,
       isolatedContent: classificationResult.isolatedContent,
       cleanSummary,
@@ -224,6 +234,9 @@ export const MEMORY_INGEST_CLASSIFY_STEP: WorkflowStep<PipelineContext> = {
       baseSignalScore,
       storeTarget: storeDecision.storeTarget,
       projectScope,
+      taskScope: taskMemory?.taskScope,
+      expiresAt: taskMemory?.expiresAt,
+      tags: taskMemory ? ['temporary-task', 'cross-project', `task:${taskMemory.taskScope}`] : undefined,
     } satisfies MemoryIngestDecision;
 
     return context;
@@ -282,8 +295,11 @@ export const MEMORY_INGEST_PERSIST_STEP: WorkflowStep<PipelineContext> = {
     const features: Partial<MemoryCreateFeatures> = {
       sessionId: readString(context.metadata, 'sessionId'),
       projectScope: decision.projectScope,
+      taskScope: decision.taskScope,
+      expiresAt: decision.expiresAt,
       importance: decision.confidence,
       confidence: decision.confidence,
+      tags: decision.tags,
     };
     const memory = await storage.createMemory(
       decision.storeTarget,

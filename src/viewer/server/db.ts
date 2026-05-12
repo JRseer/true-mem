@@ -90,6 +90,8 @@ export function mapMemoryRow(row: Row): ViewerMemory {
     summary: stringValue(row.summary),
     sourceEventIds: jsonStringArray(row.source_event_ids),
     projectScope: nullableString(row.project_scope),
+    taskScope: nullableString(row.task_scope),
+    expiresAt: nullableString(row.expires_at),
     createdAt: stringValue(row.created_at),
     updatedAt: stringValue(row.updated_at),
     lastAccessedAt: nullableString(row.last_accessed_at),

@@ -1,5 +1,6 @@
 import type {
   EmbeddingStatus,
+  EndTaskScopeResponse,
   HealthResponse,
   MemoryFilters,
   MemoryPatchRequest,
@@ -21,6 +22,13 @@ export async function patchMemory(id: string, body: MemoryPatchRequest): Promise
     method: 'PATCH',
     headers: viewerWriteHeaders(),
     body: JSON.stringify(body),
+  });
+}
+
+export async function endTaskScope(taskScope: string): Promise<EndTaskScopeResponse> {
+  return request(`/api/memories/task-scopes/${encodeURIComponent(taskScope)}/end`, {
+    method: 'POST',
+    headers: viewerWriteHeaders(),
   });
 }
 
