@@ -18,6 +18,7 @@ import {
   detectProjectSignals,
   extractProjectTerms,
   hasGlobalScopeKeyword,
+  matchAllPatterns,
   shouldBeProjectScope,
   type ConversationContext,
 } from '../../src/memory/patterns.js';
@@ -72,6 +73,18 @@ describe('golden: classifier four-layer defense', () => {
       confidence: 0.85,
       isolatedContent: 'trueMem 使用 SQLite 作为事实源',
     });
+  });
+
+  it('handles common Chinese explicit remember keywords', () => {
+    expect(classifyWithExplicitIntent('请记住：trueMem 使用 SQLite 作为事实源', [])).toEqual({
+      classification: 'semantic',
+      confidence: 0.85,
+      isolatedContent: 'trueMem 使用 SQLite 作为事实源',
+    });
+
+    expect(matchAllPatterns('帮我记住 trueMem 使用 SQLite')).toContainEqual(
+      expect.objectContaining({ type: 'explicit_remember', source: '帮我记住' })
+    );
   });
 
   it('preserves role-aware human primacy for user-level memories', () => {
@@ -139,6 +152,7 @@ describe('golden: role pattern detection', () => {
 
   it('detects explicit remember signals and assistant list patterns', () => {
     expect(hasExplicitRememberSignal('请记住 trueMem 的事实源是 SQLite')).toBe(true);
+    expect(hasExplicitRememberSignal('幫我記一下：偏好繁體中文')).toBe(true);
     expect(hasAssistantListPattern("I've noted the following:")).toBe(true);
   });
 
@@ -160,6 +174,7 @@ describe('golden: scope heuristics are filtering boundaries, not cognition', () 
   it('detects global scope keywords across languages', () => {
     expect(hasGlobalScopeKeyword('Use Chinese responses in all projects')).toBe(true);
     expect(hasGlobalScopeKeyword('这个偏好适用于所有项目')).toBe(true);
+    expect(hasGlobalScopeKeyword('這個偏好適用於所有專案')).toBe(true);
     expect(hasGlobalScopeKeyword('Use Chinese responses here')).toBe(false);
   });
 
